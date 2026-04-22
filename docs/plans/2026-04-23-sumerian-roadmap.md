@@ -1,273 +1,393 @@
 # Sumerian Base-60 Viewer — Roadmap
 
 **Дата:** 2026-04-23
-**Статус:** Proposed
-**Scope:** 4 фазы (A, B, C, D). Порядок = приоритет дифференциации.
+**Статус:** Approved
+**Scope:** 7 последовательных фаз. Порядок оптимизирован на финальное качество.
 
 ## Overview
 
-Текущее состояние: CLI + TUI, base-60 heatmap, mmap reader, стрикт clippy.
+Текущее состояние: CLI + TUI, base-60 heatmap, mmap reader, strict clippy (pedantic + nursery + cargo).
 Цель: превратить утилиту из hex-dump-альтернативы в **уникальный шумерский инструмент** с археологической эстетикой, семантическими линзами и экосистемной интеграцией.
 
-Фазы независимы по коду, но имеют общий core (`convert.rs`, `color.rs`). A делается первой — даёт визуальный wow-эффект и reuse компонентов для B/C.
+Порядок и обоснование:
 
 ```
-A (Lens)  ──► B (Navigator) ──► C (Archaeologist) ──► D (Ecosystem)
-   │              │                    │                    │
-   └─ cuneiform   └─ cursor state      └─ entropy calc     └─ encoder
-      module         + bookmarks          + detectors         + lib crate
+Phase 1 (CI)      ──► 2 (Lens A)  ──► 3 (Archaeologist C) ──► 4 (Navigator B)
+                                                                     │
+                                                                     ▼
+Phase 7 (release) ◄── 6 (workspace) ◄── 5 (decode+format)   ◄───────┘
 ```
+
+- **Phase 1 (CI)** первой — ловит regressions на каждой следующей фазе.
+- **Phase 2 (Lens A)** до analysis: `Lens` trait переиспользуется analysis для аннотаций регионов.
+- **Phase 3 (Archaeologist C)** до Navigator: entropy sparkline + region detection поставляют данные для семантических прыжков в B.
+- **Phase 4 (Navigator B)** последним из core — композитор Lens + Analysis в единый интерактив.
+- **Phase 5 (decode/format)** после того как все фичи отображения стабильны — pipe-экосистема «замораживает» семантику вывода.
+- **Phase 6 (workspace split)** — API наиболее стабилен именно сейчас, core выносится без последующих перемешиваний.
+- **Phase 7 (release eng)** — completions, man page, cargo-dist, README, asciinema. Только после API freeze.
 
 ---
 
-## Phase A — Sumerian Lens
+## Phase 1 — CI Foundation
 
-**Goal:** Единый флаг `--lens` меняет семантику вывода, добавляя шумерский контекст к каждому чанку.
+**Commit prefix:** `ci:`
+**Goal:** Regression net с нулевого дня каждой следующей фазы.
 
 ### Scope
 
-- Новый модуль `src/lens.rs` с trait `Lens` (метод `interpret(&[u8; 8]) -> LensAnnotation`)
-- Флаг `--lens={none,time,angle,tablet,cuneiform}` (default `none` = текущее поведение)
-- Линзы:
-  - `time` — u64 как timestamp: `DDDd HH:MM:SS.sss` (шумерское время)
-  - `angle` — u64 как угол в milliarcseconds: `DDD°MM'SS"` (живое применение base-60!)
-  - `tablet` — frame с «seal header» + placeholder-пробелы вместо leading zeros (historical accuracy)
-  - `cuneiform` — цифры клинописью U+12000..U+12399 с auto-fallback на ASCII если ширина терминала ≠ моноширине
-- Split-вывод: каждая линза добавляет ещё одну колонку справа от ASCII
-- Новый модуль `src/cuneiform.rs` — LUT для 0..59 → клинописные глифы
-
-### Non-goals
-
-- Обратная конверсия (Phase D)
-- Взаимодействие в TUI с линзой (Phase B добавит toggle key)
-
-### Design sketch
-
-```rust
-// lens.rs
-pub(crate) trait Lens {
-    fn name(&self) -> &'static str;
-    fn interpret(&self, chunk: [u8; 8]) -> String;
-}
-
-pub(crate) struct TimeLens;
-pub(crate) struct AngleLens;
-pub(crate) struct TabletLens;
-pub(crate) struct CuneiformLens { fallback: bool }
-```
-
-`dump::write_line` получает `Option<&dyn Lens>`; если Some — append к выводу.
-`styled_line` аналогично для TUI.
+- `.github/workflows/ci.yml` с матрицей:
+  - OS: `ubuntu-latest`, `macos-latest`, `windows-latest`
+  - Toolchain: `1.95.0` (MSRV), `stable`, `beta`
+- Jobs:
+  - `test` — `cargo test --all-targets --locked`
+  - `clippy` — `cargo clippy --all-targets --locked -- -D warnings` (inherits `[lints.clippy]` из Cargo.toml)
+  - `fmt` — `cargo fmt --all --check`
+  - `build-release` — `cargo build --release --locked`
+  - `doc` — `cargo doc --no-deps --locked` с `RUSTDOCFLAGS="-D warnings"`
+- Кэш через `Swatinem/rust-cache@v2`.
+- Fail-fast: `false` (хочу видеть результаты всех OS даже при падении одного).
 
 ### Acceptance
 
-- `base60 --lens time /bin/ls` показывает сумерское время справа от ASCII
-- `base60 --lens cuneiform /bin/ls` рендерит глифами, при `$COLUMNS < N` fallback на base-60
-- `--purist` подфлаг: пробел вместо `00` в ведущих нулях (только для `tablet`)
-- Все линзы проходят `cargo test`, zero-alloc в hot path кроме cuneiform (String::push на каждую цифру)
-- Clippy pedantic+nursery+cargo clean
+- Все 4 jobs зелёные на push в main и на PR.
+- Badge `[![CI]()]` добавлен в README (создаётся в Phase 7).
+- Concurrency: новые коммиты в PR отменяют предыдущие прогоны.
 
-### Risks
+### Effort
 
-- Клинопись требует специфичных шрифтов (DejaVu, Noto Sans Cuneiform) — mitigation: runtime-width detection через `unicode-width`
-- `--lens time` для файлов > 2⁶³ секунд даёт абсурдные значения — mitigation: showing raw ns для очень больших
-
-### Effort estimate
-
-~1-2 дня. Файлов: 3 новых (`lens.rs`, `cuneiform.rs`, `tests/lens_integration.rs`), 2 модификации (`dump.rs`, `cli.rs`).
+~1 час.
 
 ---
 
-## Phase B — Tablet Navigator
+## Phase 2 — Sumerian Lens (ex-A)
 
-**Goal:** TUI превращается в «интерактивную клинописную табличку» — семантическая навигация + курсорная связка колонок.
+**Commit prefix:** `feat(lens):`
+**Goal:** Единый флаг `--lens` добавляет шумерский семантический слой к выводу.
 
 ### Scope
 
-- Курсорный режим: `h/j/k/l` двигают байт-курсор; подсветка синхронно в offset/digits/ascii
-- Base-60 координаты в статус-баре: `row 01:23  col 07` вместо hex offsets (опционально через `--coord-base60`)
-- Закладки: `m<a-z>` → `'<a-z>` (vim-style), визуальный маркер в gutter (glyph 𒑭)
-- Поиск: `/` → input в status-bar, ищет байт-паттерн (hex или ascii literal), подсветка hit
-- Семантические прыжки: `]p` next printable run, `]z` next zero run, `]e` next entropy spike
-- Toggle линзы (из Phase A): `L` циклит через lens modes
-- Persistent state: последняя позиция per file → `$XDG_STATE_HOME/base60/positions.json`
+- `src/lens.rs` — trait `Lens` + реализации:
+
+  ```rust
+  pub(crate) trait Lens: Send + Sync {
+      fn name(&self) -> &'static str;
+      fn render(&self, chunk_be: u64) -> String;
+  }
+  ```
+
+- `src/cuneiform.rs` — LUT `[&str; 60]` отображения 0..59 в клинопись (комбинация U+12079 `𒁹` для 1, U+1230B `𒌋` для 10) + ASCII fallback.
+- Линзы:
+  - **`time`** — u64 интерпретируется как **Sumerian gar ticks** (1 gar ≈ 2 современные секунды).
+    Декомпозиция:
+    - `day  = u / (12 · 60 · 60)`
+    - `beru = (u / (60 · 60)) % 12` (двойной час)
+    - `uš   = (u / 60) % 60` (≈ 2 минуты каждый)
+    - `gar  = u % 60` (≈ 2 секунды каждый)
+    - Рендер: `{day}d {beru:02}𒁹 {uš:02}:{gar:02}`
+    - Флаг `--time-scale=gar|sec|ms` для альтернативных интерпретаций (default `gar`).
+  - **`angle`** — u64 как milliarcseconds (до сих пор живое sexagesimal применение):
+    - `°    = u / 3_600_000`
+    - `′    = (u / 60_000) % 60`
+    - `″    = (u / 1000) % 60`
+    - `ms   = u % 1000`
+    - Рендер: `{°:03}°{′:02}′{″:02}.{ms:03}″`
+  - **`tablet`** — ведущие нули → пробел (historical accuracy: в ранней шумерской записи нуля не было).
+    - `--purist` флаг (отдельно или как часть `tablet`): placeholder ` `, не `00`.
+    - Опционально обрамляет строку ASCII-углами `⌐ ¬` имитируя края таблички.
+  - **`cuneiform`** — каждая из 11 base-60 цифр рендерится `cuneiform::glyph(d)`.
+    - Runtime-детект ширины через `unicode-width::UnicodeWidthStr` — если любая из глифов > 2 cells, fallback на десятичные пары.
+    - Если `NO_UNICODE=1` в env, безусловный fallback.
+- Поток:
+  - `dump::write_line` и `dump::styled_line` получают `lens: Option<&dyn Lens>`.
+  - Если `Some`, после ASCII-колонки добавляется `  {lens.render(chunk_be_u64)}`.
+  - `PALETTE_ANSI` получает новое поле `lens: "\x1b[35m"` (magenta) для отличия колонки.
+
+### CLI
+
+```
+--lens=<MODE>        none|time|angle|tablet|cuneiform (default: none)
+--time-scale=<UNIT>  gar|sec|ms (default: gar, только с --lens=time)
+--purist             placeholder-пробел в tablet mode
+```
 
 ### Non-goals
 
-- Редактирование файла (read-only)
-- Regex (только литеральный паттерн)
+- TUI toggle линзы (делается в Phase 4).
+- Обратная конверсия линзы (отдельная идея, не в scope).
+- Сериализация линзы в JSON (Phase 5).
 
-### Design sketch
+### Acceptance
+
+- `base60 --lens=time /bin/ls` показывает `0d 00𒁹 00:00` в первой строке (zero chunk).
+- `base60 --lens=angle` на u64=3_600_000 даёт `001°00′00.000″`.
+- `base60 --lens=cuneiform /bin/ls` рендерит клинописью; `NO_UNICODE=1 base60 --lens=cuneiform` → fallback на digits.
+- `base60 --lens=tablet --purist` показывает пробелы вместо ведущих нулей.
+- Все линзы покрыты unit-тестами с граничными значениями (0, u64::MAX, single-digit, etc).
+- Clippy clean, fmt clean.
+- Phase 1 CI зелёный.
+
+### Effort
+
+~1-2 дня. Новые файлы: `lens.rs`, `cuneiform.rs`. Модификации: `cli.rs`, `color.rs`, `dump.rs`, `main.rs`.
+
+---
+
+## Phase 3 — Data Archaeologist (ex-C)
+
+**Commit prefix:** `feat(analyze):`
+**Goal:** Аналитический слой — Shannon entropy, byte histogram, region detection, diff-mode.
+
+### Scope
+
+- `src/analyze.rs`:
+
+  ```rust
+  pub(crate) struct Analysis {
+      pub(crate) entropy_windows: Vec<f32>,    // Shannon bits/byte per window
+      pub(crate) byte_freq: Box<[u32; 256]>,
+      pub(crate) regions: Vec<Region>,
+  }
+
+  pub(crate) struct Region {
+      pub(crate) start: usize,
+      pub(crate) end: usize,
+      pub(crate) kind: RegionKind,
+  }
+
+  pub(crate) enum RegionKind { Ascii, Utf8, HighEntropy, LowEntropy, Mixed }
+  ```
+
+- Параметры: `window_size` (default 256, минимум 64, экспозить через `--entropy-window=N`).
+- **Стратегия вычисления:** eager precompute при загрузке файла (O(n), single-pass). Entropy precompute выгодно даже на 1GB — ~4MB памяти за sparkline. Lazy только при `--no-precompute` (для хостов с жёстким лимитом памяти).
+- `src/detect.rs`:
+  - ASCII run ≥ 4 graphic/space → `RegionKind::Ascii`
+  - Валидные UTF-8 non-ASCII последовательности → `RegionKind::Utf8`
+  - Window entropy > 7.5 → `HighEntropy` (likely compressed/encrypted)
+  - Window entropy < 1.0 → `LowEntropy` (zero fill, padding)
+- `src/diff.rs`:
+  - Зависимость: `similar = "2.7"`.
+  - Myers LCS на 8-byte чанках.
+  - Guard: оба файла ≤ 100 MB, иначе error-out с подсказкой использовать `cmp`.
+- Subcommand `base60 analyze <FILE>` — non-TUI сводка:
+  - Total bytes, entropy mean/stddev, region counts, top 5 bytes.
+- Mode `base60 --diff <A> <B>`:
+  - Side-by-side CLI rendering, отличающиеся строки в красном.
+
+### TUI integration (предварительная)
+
+- Footer-panel вырастает до `Constraint::Length(5)`:
+  - Row 0: status (как сейчас).
+  - Rows 1-3: entropy sparkline (ratatui Sparkline widget).
+  - Rows 4: mini byte histogram (64 buckets: 60 digits + 4 special).
+- Этот блок оставляет полную интеграцию на Phase 4.
+
+### Acceptance
+
+- `base60 analyze /bin/ls` выводит correct counts, pass smoke test на 10KB, 1MB, 100MB.
+- `base60 --diff a.bin b.bin` корректно подсвечивает различающиеся строки.
+- ASCII strings в `/bin/ls` определяются как `RegionKind::Ascii`.
+- `/dev/urandom | head -c 1K | base60 analyze -` показывает entropy ≈ 8.0.
+- Footer sparkline рендерится в TUI.
+- CI зелёный.
+
+### Effort
+
+~2 дня.
+
+---
+
+## Phase 4 — Tablet Navigator (ex-B)
+
+**Commit prefix:** `feat(tui):`
+**Goal:** Интерактивный TUI с курсором, закладками, поиском, семантическими прыжками, toggle линз.
+
+### Scope
+
+- **Cursor mode:** `h/j/k/l` двигают байт-курсор; подсветка синхронна в offset/digits/ascii/lens колонках.
+- **Base-60 coords** в status-bar (опционально через `--coord-base60`): `row 01:23 col 07` вместо hex offset.
+- **Bookmarks:** `m<a-z>` ставит, `'<a-z>` прыгает. Gutter-маркер глиф `𒑭`. Хранение в `ViewState`.
+- **Search:** `/` открывает input в status-bar (modal mode). Парсер: hex literal `0xdeadbeef`, string literal `"foo"`, byte sequence `de ad be ef`. `n`/`N` между hits. `Esc` отменяет search mode.
+- **Ctrl-C behaviour:** в search mode — `Esc` для cancel, `Ctrl-C` — полный выход из TUI (signal-like, консистентно с CLI-инструментами).
+- **Semantic jumps:** `]p` next printable run, `]z` next zero run, `]e` next entropy spike (использует `Analysis` из Phase 3). `[` — предыдущие.
+- **Lens toggle:** `L` циклит `none → time → angle → tablet → cuneiform → none`. Отображается в title-bar.
+- **Persistent state:**
+  - Файл: `$XDG_STATE_HOME/base60/positions.json` (fallback: `~/.local/state/base60/`).
+  - Ключ: `blake3(canonical_path + first_4KB)` — надёжнее mtime.
+  - Значение: `{scroll, cursor, bookmarks, active_lens}`.
+  - Запись только при `q` / `ESC` quit.
+
+### Design skeleton
 
 ```rust
-// tui.rs extensions
-struct CursorState { byte: usize }
-struct BookmarkSet(HashMap<char, usize>)
-enum Mode { Normal, Search, BookmarkSet, BookmarkJump }
+enum Mode { Normal, Search { buf: String }, BookmarkSet, BookmarkJump }
 
 struct ViewState {
     // existing fields
-    cursor: CursorState,
-    bookmarks: BookmarkSet,
+    cursor: Option<usize>,      // byte index
+    bookmarks: HashMap<char, usize>,
     mode: Mode,
-    search_query: String,
+    last_search: Option<SearchQuery>,
     active_lens: Option<Box<dyn Lens>>,
+    analysis: Option<Arc<Analysis>>,
+    session_id: Option<SessionKey>,
 }
 ```
 
-Entropy prejump: precompute Shannon per 256-byte window при загрузке, cache в Vec<f32>.
-
 ### Acceptance
 
-- Курсор виден, навигация hjkl работает, подсветка синхронна
-- `m a` → `'a` возвращает к позиции после скролла
-- `/foo` подсвечивает все вхождения, `n`/`N` между ними
-- `]p` перепрыгивает на следующий printable run
-- State перезапускается: второй запуск на том же файле восстанавливает позицию
+- `hjkl` перемещают курсор, подсветка синхронна между 3-4 колонками.
+- `m a` → скролл → `'a` восстанавливает позицию.
+- `/foo` → подсветка всех вхождений, `n` прыгает к следующему, `N` к предыдущему.
+- `]e` прыгает к следующему high-entropy региону.
+- `L` переключает линзы.
+- Повторный запуск на том же файле восстанавливает scroll + cursor + bookmarks.
+- Smoke test: ручная сессия на /bin/ls + /dev/urandom dump.
 
-### Risks
+### Effort
 
-- Bookmark persistence — файл-ключ через canonical path + xxhash первых 4КБ (mtime unreliable)
-- Entropy window size trade-off — default 256, экспозить через флаг
-
-### Effort estimate
-
-~2-3 дня. Файлы: `tui.rs` расширение, новые `src/cursor.rs`, `src/bookmarks.rs`, `src/search.rs`, `src/entropy.rs`.
+~2-3 дня.
 
 ---
 
-## Phase C — Data Archaeologist
+## Phase 5 — Decode & Format outputs
 
-**Goal:** Нижняя панель превращается в аналитическую: entropy sparkline, byte histogram, auto-detection регионов, diff-mode.
+**Commit prefix:** `feat(io):`
+**Goal:** Pipe-friendly экосистема.
 
 ### Scope
 
-- Статус-бар расширяется до footer-panel (Constraint::Length(5))
-- Левая половина: Shannon entropy sparkline по окнам (ratatui Sparkline widget)
-- Правая половина: byte histogram (64 bucket = base-60 digits + 4 special)
-- Автодетект:
-  - ASCII runs ≥ 4 chars → подсветка зелёным в gutter
-  - UTF-8 валидные регионы → cyan
-  - Высокая энтропия (>7.5) → red (сжато/шифровано)
-  - Low entropy (<1.0) → gray (zero fills, паддинг)
-- **Diff mode:** `base60 --diff a.bin b.bin` — side-by-side, расхождения подсвечены
-- Новый CLI subcommand `base60 analyze file.bin` — non-TUI статистика в stdout
-
-### Non-goals
-
-- File carving / извлечение embedded форматов (отдельный проект)
-- Structural parsing (ELF/PE/ZIP)
-
-### Design sketch
-
-```rust
-// analyze.rs
-pub(crate) struct Analysis {
-    entropy_windows: Vec<f32>,
-    byte_freq: [u32; 256],
-    regions: Vec<Region>,  // {start, end, kind}
-}
-
-pub(crate) enum RegionKind { Ascii, Utf8, HighEntropy, LowEntropy, Mixed }
-```
-
-Diff через `similar` crate (myers diff на 8-byte чанках).
+- **`--decode`:** `cat dump.txt | base60 --decode > original.bin`.
+  - Парсер: line-based, извлекает base-60 пары вида `NN:NN:...` (11 пар → 8 bytes BE).
+  - Толерантен к mixed-content (dump с ASCII/offset колонками). Regex `(\d{2}:){10}\d{2}`.
+  - Error-out при невалидных digits (≥ 60) с указанием строки.
+- **`--format=<MODE>`:**
+  - `ansi` (default, current behaviour)
+  - `plain` — no ANSI, для grep/awk pipelines
+  - `json` — per-line JSON object: `{"offset":N, "digits":[...], "ascii":"...", "lens":"..."}`
+  - `html` — self-contained report: inline CSS с тем же heatmap, `<pre>` с span-ами
+- **URL-safe base60 encoding:**
+  - Алфавит `0-9A-Za-x` (62 ascii printable минус `y`/`z` для ambiguity) → ровно 60 символов.
+  - `pub fn encode_url(bytes: &[u8]) -> String`
+  - `pub fn decode_url(s: &str) -> Result<Vec<u8>, DecodeError>`
+  - Применение: короче hex для hash prefixes (`b60:3QvZ7aK` в URL).
 
 ### Acceptance
 
-- Footer отображается корректно, sparkline обновляется при скролле
-- ASCII region в /bin/ls подсвечивается (strings table)
-- `base60 analyze file.bin` выводит summary: total bytes, entropy mean, region counts
-- `base60 --diff a.bin b.bin` подсвечивает отличающиеся строки
+- `base60 --format=ansi /bin/ls | base60 --decode | cmp - /bin/ls` → silent (roundtrip).
+- `base60 --format=json /bin/ls | jq -c '.offset' | head -3` → три строки.
+- `base60 --format=plain` не содержит ANSI escapes (grep без `-P`).
+- `base60 --format=html > out.html`, открывается в браузере с цветами.
+- Unit-тесты на `encode_url`/`decode_url` roundtrip (property test через quickcheck или proptest).
 
-### Risks
+### Effort
 
-- Entropy на малых окнах (<32 bytes) шумит — min window size 64
-- Diff на больших файлах O(n²) — отключить `--diff` если any > 100MB или использовать chunked LCS
-
-### Effort estimate
-
-~2 дня. Файлы: `analyze.rs`, `diff.rs`, `footer.rs`, зависимость `similar = "2.7"`.
+~1-1.5 дня.
 
 ---
 
-## Phase D — Ecosystem
+## Phase 6 — Workspace split (core + cli)
 
-**Goal:** Превратить утилиту из standalone в переиспользуемый компонент экосистемы.
+**Commit prefix:** `refactor:` (с тегом `BREAKING` в body)
+**Goal:** Вынос pure-логики в `no_std`-совместимый library crate.
 
 ### Scope
 
-- **Library crate split:** workspace — `base60-core` (`no_std`-compatible) + `base60-cli` (binary)
-- `--decode` обратная конверсия: `echo '01:23:45' | base60 --decode` → bytes (pipe-friendly)
-- `--format={ansi,plain,json,html}`:
-  - `plain` — no ANSI, для grep/awk
-  - `json` — `{offset, digits, ascii, lens?}` per line
-  - `html` — self-contained report с тем же heatmap (inline CSS)
-- **URL-safe base60 encoding:** алфавит `0-9A-Za-x` (62 - 2 амбигуус = 60), функция `encode_url(bytes) -> String`, полезно для hash prefixes в URL короче чем hex
-- Shell completions: `base60 completions {bash,zsh,fish}` через `clap_complete`
-- Man page: `clap_mangen` в build.rs
-- GitHub Actions CI: matrix test (linux/macos/windows × stable/beta), clippy, fmt, release build artifacts
-- `cargo-dist` для релизов (бинари на tag)
+- Новая структура:
 
-### Non-goals
+  ```
+  ├── Cargo.toml              # [workspace]
+  ├── crates/
+  │   ├── base60-core/        # #![no_std] совместимый
+  │   │   ├── Cargo.toml
+  │   │   └── src/lib.rs      # u64_to_base60, encode_url, decode_url, Lens, CuneiformLUT
+  │   └── base60-cli/         # binary
+  │       ├── Cargo.toml
+  │       └── src/
+  │           ├── main.rs
+  │           ├── cli.rs
+  │           ├── reader.rs
+  │           ├── dump.rs
+  │           ├── color.rs
+  │           ├── tui.rs
+  │           └── analyze.rs  # нужен std
+  └── .github/workflows/ci.yml
+  ```
 
-- Публикация на crates.io (после стабилизации API в v1.0)
-- WASM target (хотя core crate будет совместим)
-
-### Design sketch
-
-```
-workspace/
-├── Cargo.toml          # [workspace]
-├── crates/
-│   ├── base60-core/    # no_std, pure conversion + encoding
-│   │   ├── src/lib.rs
-│   │   └── Cargo.toml
-│   └── base60-cli/     # binary, имеет все features + зависимость на core
-│       ├── src/main.rs
-│       └── Cargo.toml
-└── .github/workflows/ci.yml
-```
+- `base60-core` dependencies: none (`no_std`). Exports: `u64_to_base60`, `u64_from_base60`, `encode_url`, `decode_url`, `CuneiformGlyph`, `Lens` trait (если возможно — trait objects требуют alloc, так что feature-flag).
+- `base60-core` features: `std` (default off), `alloc` (default off).
+- `base60-cli` depends on `base60-core = { path = "../base60-core", features = ["std","alloc"] }`.
+- Миграция делается atomic commits per-file где возможно; один финальный commit `chore: workspace split` который двигает файлы + reorganises Cargo.toml.
+- **Git blame preservation:** использовать `git mv` для переноса и добавить `.git-blame-ignore-revs` с одной строкой reformat-commit'а (если такой нужен). После split `git blame --follow` работает автоматически через history detection.
 
 ### Acceptance
 
-- `cargo test --workspace` проходит
-- `base60 --format json /bin/ls | jq '.offset'` работает
-- `echo '01:23:45' | base60 --decode | xxd` даёт валидные байты
-- CI зелёный на трёх OS × двух toolchains
-- `cargo install --path crates/base60-cli` ставит working binary
-- Downstream crate может `use base60_core::{u64_to_base60, encode_url}` в `no_std`
+- `cargo test --workspace` — все тесты зелёные.
+- `cargo build -p base60-core --no-default-features --target thumbv7em-none-eabihf` — core собирается для embedded target.
+- `cargo install --path crates/base60-cli` ставит working binary.
+- Downstream mini-crate может `use base60_core::{u64_to_base60, encode_url}` без `std`.
+- CI matrix добавляет `embedded-check` job (no_std build).
 
-### Risks
+### Effort
 
-- Workspace split ломает текущие пути — mitigation: delicate migration, все тесты остаются
-- `no_std` требует удалить `String` из core — mitigation: LUT в `&'static [[u8; 2]; 60]` вместо format
-
-### Effort estimate
-
-~2-3 дня. Структурный рефакторинг, много touchpoints но каждый локальный.
+~1.5-2 дня. Осторожный рефакторинг, но каждое touchpoint локален.
 
 ---
 
-## Rollout
+## Phase 7 — Release engineering
 
-**Порядок:** A → B → C → D (каждый делается через `/gsd-quick` отдельно)
-**Branching:** ветка `phase-{a,b,c,d}` на группу, PR на main после прохождения тестов
-**Commit strategy:** atomic commits per acceptance criterion
-**Quality gate** (каждая фаза):
-- `cargo test --all-targets` — все тесты зелёные
-- `cargo clippy --all-targets -- -D warnings` — pedantic+nursery+cargo clean
-- `cargo fmt --check` — formatted
-- Manual smoke test binary на `/bin/ls` и `/dev/urandom | head -c 1K`
+**Commit prefix:** `chore(release):`
+**Goal:** Professional-grade distribution.
+
+### Scope
+
+- **Shell completions:** `clap_complete` генерация, subcommand `base60 completions <SHELL>`.
+- **Man page:** `clap_mangen`, сгенерировано в `build.rs` → `target/man/base60.1`.
+- **`cargo-dist`:** `.github/workflows/release.yml` на tag `v*`, builds для `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `x86_64-apple-darwin`, `aarch64-apple-darwin`, `x86_64-pc-windows-msvc`. Artifacts как `.tar.gz`/`.zip` + checksums + provenance.
+- **README.md:**
+  - Hero asciinema демо (`.cast` файл, играется через asciinema-player.js в README через GitHub-trick или externally hosted).
+  - Install секция: `cargo install`, `brew tap`, `scoop`, precompiled binary.
+  - Feature matrix: что делает каждый `--lens`, `--format`, subcommand.
+  - CI badge, crates.io badge (если published — под вопросом).
+- **docs.rs:** публичные items в `base60-core` с rustdoc examples (doctest-verified).
+- **`CHANGELOG.md`:** Keep a Changelog format, v0.1.0 release notes на основе commit history.
+
+### Acceptance
+
+- `base60 completions zsh > ~/.zfunc/_base60` работает.
+- `man base60` показывает корректную page.
+- Tag `v0.1.0` триггерит release workflow, артефакты появляются в GitHub Releases.
+- README видим на GitHub с работающими badges.
+- `cargo doc --open` для `base60-core` показывает документацию без warnings.
+
+### Effort
+
+~0.5-1 день.
 
 ---
 
-## Unresolved questions
+## Rollout policy
 
-- Фаза A `--lens=time` — интерпретировать u64 как секунды UNIX или как raw шумерские единицы?
-- Фаза B — перехватывать `Ctrl-C` в search mode или эскейпить через Esc?
-- Фаза C — хранить entropy precompute в памяти или lazy-вычислять при скролле?
-- Фаза D — workspace миграция ломает git history blame, делать отдельным commit с `--follow` осознанно?
-- Все фазы в одном PR или по одному PR на фазу?
-- Нужна ли отдельная фаза **E — Documentation**: README с примерами, asciinema демо, docs.rs комментарии?
-- Порядок A→B→C→D оптимален или предпочитаешь D→A→B→C (сначала infra для stable API)?
+- **Branching:** каждая фаза в отдельной ветке `phase-{N}-{slug}`, PR на main. Не squash-merge — preserve atomic commits.
+- **Commit style:** Conventional commits (см. commit prefix каждой фазы), body объясняет **почему**, не **что**.
+- **Quality gate на фазу:**
+  - `cargo test --all-targets --locked` — zero failures
+  - `cargo clippy --all-targets --locked -- -D warnings` — clean (pedantic + nursery + cargo)
+  - `cargo fmt --all --check` — formatted
+  - CI зелёный на 3 OS × 3 toolchains (после Phase 1)
+  - Manual smoke test binary: `/bin/ls`, `/dev/urandom | head -c 1K`, empty file, 100MB file
+- **Rollback:** если фаза введёт regression, revert commit(ов) — atomic history делает это чистым.
+
+## Decisions locked
+
+- `--lens=time` использует Sumerian time units (**beru:UŠ:gar**, 1 gar ≈ 2 sec). Альтернативные масштабы через `--time-scale`.
+- Phase 4 Ctrl-C — **exit TUI**, Esc — cancel search/bookmark mode.
+- Phase 3 entropy — **eager precompute** (single-pass при загрузке), `--no-precompute` escape hatch.
+- Phase 6 — **отдельный PR**, добавить `.git-blame-ignore-revs`, git mv для file-tracking.
+- Каждая фаза — **отдельный PR** (не батч). Upstream merge после green CI.
+
+## Open questions
+
+- Phase 2 — `--lens=cuneiform` width detection: runtime через `unicode-width`, достаточно или пробовать `terminfo`?
+- Phase 3 — `RegionKind::Utf8` пересекается с Ascii — единый kind `Text { encoding }` или отдельные?
+- Phase 5 — JSON format: newline-delimited (ndjson) или array?
+- Phase 7 — публиковать ли `base60-core` на crates.io, или держать path-only?
