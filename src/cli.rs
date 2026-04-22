@@ -1,7 +1,20 @@
 //! Command-line interface definition.
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use std::path::PathBuf;
+
+/// When to colorize output, mirroring the `--color` convention of
+/// `ls`, `grep`, `diff`, etc.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, ValueEnum)]
+pub(crate) enum ColorChoice {
+    /// Colorize when stdout is a TTY and `NO_COLOR` is unset.
+    #[default]
+    Auto,
+    /// Always emit ANSI colours.
+    Always,
+    /// Never emit ANSI colours.
+    Never,
+}
 
 /// View binary data as base-60 (sexagesimal) digit pairs in the
 /// Sumero-Babylonian positional notation.
@@ -22,4 +35,14 @@ pub(crate) struct Cli {
     /// Read at most this many bytes.
     #[arg(short = 'n', long, value_name = "N")]
     pub(crate) length: Option<u64>,
+
+    /// When to colorize the output (`auto`, `always`, `never`).
+    /// `auto` honours `NO_COLOR` and checks whether stdout is a TTY.
+    #[arg(
+        long,
+        value_enum,
+        default_value_t = ColorChoice::Auto,
+        value_name = "WHEN",
+    )]
+    pub(crate) color: ColorChoice,
 }

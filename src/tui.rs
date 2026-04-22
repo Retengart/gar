@@ -1,11 +1,11 @@
 //! Interactive terminal viewer (optional `--interactive` flag).
 
-use crate::dump::{CHUNK, format_line};
+use crate::dump::{CHUNK, border_style, status_style, styled_line, title_style};
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::layout::{Constraint, Layout};
-use ratatui::style::{Modifier, Style};
-use ratatui::text::Line;
+use ratatui::style::Style;
+use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 
 const TITLE: &str = " base60 — q: quit  j/k: line  Ctrl-d/u: half page  g/G: top/bot ";
@@ -76,29 +76,51 @@ impl ViewState {
                 let start = row * CHUNK;
                 let end = (start + CHUNK).min(data.len());
                 let offset = base_offset.saturating_add(start as u64);
-                Line::from(format_line(offset, &data[start..end]))
+                styled_line(offset, &data[start..end])
             })
             .collect();
 
-        let body = Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title(TITLE));
+        let title = Line::from(Span::styled(TITLE, title_style()));
+        let body = Paragraph::new(lines).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(border_style())
+                .title(title),
+        );
         frame.render_widget(body, body_area);
 
-        let status = if self.total_lines == 0 {
-            " empty input ".to_owned()
-        } else {
-            format!(
-                " lines {}-{} / {}   bytes {}-{} ",
-                self.scroll + 1,
-                visible_end,
-                self.total_lines,
-                base_offset.saturating_add((self.scroll * CHUNK) as u64),
-                base_offset.saturating_add((visible_end * CHUNK) as u64),
-            )
-        };
+        let status_line = self.status_line(base_offset, visible_end);
         frame.render_widget(
-            Paragraph::new(status).style(Style::default().add_modifier(Modifier::REVERSED)),
+            Paragraph::new(status_line).style(Style::default()),
             status_area,
         );
+    }
+
+    /// Build the bottom status bar as styled spans: pale fixed labels + a
+    /// highlight for the live numbers so the eye can track them as the
+    /// viewport moves.
+    fn status_line(&self, base_offset: u64, visible_end: usize) -> Line<'static> {
+        let label = status_style();
+        let dim = Style::default();
+        if self.total_lines == 0 {
+            return Line::from(Span::styled(" empty input ", label));
+        }
+
+        let start_byte = base_offset.saturating_add((self.scroll * CHUNK) as u64);
+        let end_byte = base_offset.saturating_add((visible_end * CHUNK) as u64);
+
+        Line::from(vec![
+            Span::styled(" lines ", label),
+            Span::styled(
+                format!("{}-{}", self.scroll + 1, visible_end),
+                Style::default(),
+            ),
+            Span::styled(" / ", dim),
+            Span::styled(self.total_lines.to_string(), Style::default()),
+            Span::styled("   bytes ", label),
+            Span::styled(format!("{start_byte}-{end_byte}"), Style::default()),
+            Span::raw(" "),
+        ])
     }
 
     fn handle_key(&mut self, code: KeyCode, mods: KeyModifiers) -> std::ops::ControlFlow<()> {
@@ -186,5 +208,31 @@ mod tests {
         s.view_rows = 20;
         let _ = s.handle_key(KeyCode::Char('d'), KeyModifiers::NONE);
         assert_eq!(s.scroll, 0);
+    }
+
+    #[test]
+    fn status_line_empty_input() {
+        let s = ViewState::new(0);
+        let line = s.status_line(0, 0);
+        let joined: String = line
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect();
+        assert_eq!(joined, " empty input ");
+    }
+
+    #[test]
+    fn status_line_populated_mentions_counts() {
+        let mut s = ViewState::new(8 * 100);
+        s.scroll = 5;
+        let line = s.status_line(0x100, 20);
+        let joined: String = line
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect();
+        assert!(joined.contains(" lines 6-20 / 100"));
+        assert!(joined.contains("bytes"));
     }
 }

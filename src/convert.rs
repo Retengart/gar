@@ -5,17 +5,8 @@
 //! most significant first. Eleven digits suffice because
 //! `60.pow(11) ≈ 3.65 · 10¹⁹ > u64::MAX ≈ 1.84 · 10¹⁹`.
 
-use std::io::{self, Write};
-
 /// Number of base-60 digits required to represent any [`u64`].
 pub(crate) const DIGITS: usize = 11;
-
-/// Width in columns of the formatted digit string: two decimal columns per
-/// digit plus a separator between every consecutive pair of digits.
-pub(crate) const DIGIT_STR_WIDTH: usize = DIGITS * 3 - 1;
-
-/// Separator between successive sexagesimal digits in the output.
-const SEP: u8 = b':';
 
 /// Convert `n` into its base-60 digits, most-significant first.
 ///
@@ -33,36 +24,21 @@ pub(crate) fn u64_to_base60(mut n: u64) -> [u8; DIGITS] {
     out
 }
 
-/// Write `digits` as zero-padded decimal pairs joined by `:` into `w`.
-///
-/// Preferred over [`format_digits`] on hot paths: no heap allocation.
-#[inline]
-pub(crate) fn write_digits<W: Write>(w: &mut W, digits: &[u8; DIGITS]) -> io::Result<()> {
-    // Zero-alloc fixed-size buffer sized for the final string.
-    let mut buf = [0_u8; DIGIT_STR_WIDTH];
-    let mut i = 0;
-    for (idx, &d) in digits.iter().enumerate() {
-        debug_assert!(d < 60, "digit out of range");
-        if idx > 0 {
-            buf[i] = SEP;
-            i += 1;
-        }
-        buf[i] = b'0' + d / 10;
-        buf[i + 1] = b'0' + d % 10;
-        i += 2;
-    }
-    debug_assert_eq!(i, DIGIT_STR_WIDTH);
-    w.write_all(&buf)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn fmt(n: u64) -> String {
-        let mut buf = Vec::with_capacity(DIGIT_STR_WIDTH);
-        write_digits(&mut buf, &u64_to_base60(n)).unwrap();
-        String::from_utf8(buf).unwrap()
+        let digits = u64_to_base60(n);
+        let mut s = String::with_capacity(DIGITS * 3 - 1);
+        for (i, d) in digits.iter().enumerate() {
+            if i > 0 {
+                s.push(':');
+            }
+            s.push((b'0' + d / 10) as char);
+            s.push((b'0' + d % 10) as char);
+        }
+        s
     }
 
     fn recompose(digits: &[u8; DIGITS]) -> u128 {
@@ -120,18 +96,11 @@ mod tests {
     }
 
     #[test]
-    fn format_width_matches_constant() {
-        assert_eq!(fmt(0).len(), DIGIT_STR_WIDTH);
-        assert_eq!(fmt(u64::MAX).len(), DIGIT_STR_WIDTH);
-    }
-
-    #[test]
-    fn write_digits_matches_fmt_helper() {
-        for &n in &[0_u64, 1, 60, 5025, u64::MAX] {
-            let d = u64_to_base60(n);
-            let mut buf = Vec::new();
-            write_digits(&mut buf, &d).unwrap();
-            assert_eq!(String::from_utf8(buf).unwrap(), fmt(n));
+    fn every_digit_is_valid() {
+        for n in (0_u64..60_u64.pow(3)).step_by(7) {
+            for &d in &u64_to_base60(n) {
+                assert!(d < 60);
+            }
         }
     }
 }
