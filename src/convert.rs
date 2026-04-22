@@ -1,41 +1,74 @@
-/// Number of base-60 digits needed to represent any u64.
-/// 60^11 ≈ 3.65·10^19 > u64::MAX ≈ 1.84·10^19, so 11 digits always suffice.
-pub const DIGITS: usize = 11;
+//! Base-60 (sexagesimal) integer conversion, as used by the Sumerians
+//! and later Babylonians.
+//!
+//! A [`u64`] is rendered as a sequence of exactly [`DIGITS`] base-60 digits,
+//! most significant first. Eleven digits suffice because
+//! `60.pow(11) ≈ 3.65 · 10¹⁹ > u64::MAX ≈ 1.84 · 10¹⁹`.
 
-/// Convert a u64 into its base-60 digits, most-significant first.
-/// Index 0 is the highest-order digit, index DIGITS-1 is the ones place.
-pub fn u64_to_base60(mut n: u64) -> [u8; DIGITS] {
-    let mut out = [0u8; DIGITS];
-    for i in (0..DIGITS).rev() {
-        out[i] = (n % 60) as u8;
+use std::io::{self, Write};
+
+/// Number of base-60 digits required to represent any [`u64`].
+pub(crate) const DIGITS: usize = 11;
+
+/// Width in columns of the formatted digit string: two decimal columns per
+/// digit plus a separator between every consecutive pair of digits.
+pub(crate) const DIGIT_STR_WIDTH: usize = DIGITS * 3 - 1;
+
+/// Separator between successive sexagesimal digits in the output.
+const SEP: u8 = b':';
+
+/// Convert `n` into its base-60 digits, most-significant first.
+///
+/// Index `0` holds the highest-order digit; index `DIGITS - 1` holds the
+/// ones place. Every returned byte is guaranteed to be `< 60`.
+#[must_use]
+#[inline]
+pub(crate) fn u64_to_base60(mut n: u64) -> [u8; DIGITS] {
+    let mut out = [0_u8; DIGITS];
+    for slot in out.iter_mut().rev() {
+        // `n % 60` is always in `0..60`, so the truncating cast is exact.
+        *slot = (n % 60) as u8;
         n /= 60;
     }
     out
 }
 
-/// Format digits as zero-padded decimal pairs joined by ':',
-/// e.g. [0,0,0,0,0,0,0,0,1,23,45] → "00:00:00:00:00:00:00:00:01:23:45".
-pub fn format_digits(digits: &[u8; DIGITS]) -> String {
-    let mut s = String::with_capacity(DIGITS * 3 - 1);
-    for (i, d) in digits.iter().enumerate() {
-        if i > 0 {
-            s.push(':');
+/// Write `digits` as zero-padded decimal pairs joined by `:` into `w`.
+///
+/// Preferred over [`format_digits`] on hot paths: no heap allocation.
+#[inline]
+pub(crate) fn write_digits<W: Write>(w: &mut W, digits: &[u8; DIGITS]) -> io::Result<()> {
+    // Zero-alloc fixed-size buffer sized for the final string.
+    let mut buf = [0_u8; DIGIT_STR_WIDTH];
+    let mut i = 0;
+    for (idx, &d) in digits.iter().enumerate() {
+        debug_assert!(d < 60, "digit out of range");
+        if idx > 0 {
+            buf[i] = SEP;
+            i += 1;
         }
-        s.push((b'0' + d / 10) as char);
-        s.push((b'0' + d % 10) as char);
+        buf[i] = b'0' + d / 10;
+        buf[i + 1] = b'0' + d % 10;
+        i += 2;
     }
-    s
+    debug_assert_eq!(i, DIGIT_STR_WIDTH);
+    w.write_all(&buf)
 }
-
-/// Width in columns of the formatted digit string (33 for DIGITS=11).
-pub const DIGIT_STR_WIDTH: usize = DIGITS * 3 - 1;
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn fmt(n: u64) -> String {
-        format_digits(&u64_to_base60(n))
+        let mut buf = Vec::with_capacity(DIGIT_STR_WIDTH);
+        write_digits(&mut buf, &u64_to_base60(n)).unwrap();
+        String::from_utf8(buf).unwrap()
+    }
+
+    fn recompose(digits: &[u8; DIGITS]) -> u128 {
+        digits
+            .iter()
+            .fold(0_u128, |acc, &d| acc * 60 + u128::from(d))
     }
 
     #[test]
@@ -60,38 +93,45 @@ mod tests {
     }
 
     #[test]
-    fn u64_max_fits_in_eleven_digits() {
+    fn u64_max_roundtrips_in_eleven_digits() {
         let d = u64_to_base60(u64::MAX);
-        // Every digit must be a valid base-60 digit.
-        for &x in &d {
-            assert!(x < 60);
-        }
-        // Round-trip: reconstruct and compare.
-        let mut n: u128 = 0;
-        for &digit in &d {
-            n = n * 60 + digit as u128;
-        }
-        assert_eq!(n, u64::MAX as u128);
+        assert!(d.iter().all(|&x| x < 60));
+        assert_eq!(recompose(&d), u128::from(u64::MAX));
     }
 
     #[test]
-    fn roundtrip_random_sample() {
+    fn roundtrip_samples() {
         for &n in &[
-            1u64, 42, 3599, 3600, 1_000_000, 1_u64 << 32, (1u64 << 60) + 7,
+            0_u64,
+            1,
+            42,
+            3599,
+            3600,
+            1_000_000,
+            1_u64 << 32,
+            (1_u64 << 60) + 7,
+            u64::MAX - 1,
+            u64::MAX,
         ] {
             let d = u64_to_base60(n);
-            let mut back: u128 = 0;
-            for &digit in &d {
-                assert!(digit < 60);
-                back = back * 60 + digit as u128;
-            }
-            assert_eq!(back, n as u128, "roundtrip failed for {n}");
+            assert!(d.iter().all(|&x| x < 60));
+            assert_eq!(recompose(&d), u128::from(n), "roundtrip failed for {n}");
         }
     }
 
     #[test]
-    fn format_width() {
-        let s = fmt(0);
-        assert_eq!(s.len(), DIGIT_STR_WIDTH);
+    fn format_width_matches_constant() {
+        assert_eq!(fmt(0).len(), DIGIT_STR_WIDTH);
+        assert_eq!(fmt(u64::MAX).len(), DIGIT_STR_WIDTH);
+    }
+
+    #[test]
+    fn write_digits_matches_fmt_helper() {
+        for &n in &[0_u64, 1, 60, 5025, u64::MAX] {
+            let d = u64_to_base60(n);
+            let mut buf = Vec::new();
+            write_digits(&mut buf, &d).unwrap();
+            assert_eq!(String::from_utf8(buf).unwrap(), fmt(n));
+        }
     }
 }

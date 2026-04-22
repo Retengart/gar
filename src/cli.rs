@@ -1,27 +1,25 @@
+//! Command-line interface definition.
+
 use clap::Parser;
 use std::path::PathBuf;
 
-/// Просмотрщик бинарных данных в 60-ричной системе счисления
-/// (шумеро-вавилонская позиционная запись: пары десятичных 00..59, разделитель ':').
+/// View binary data as base-60 (sexagesimal) digit pairs in the
+/// Sumero-Babylonian positional notation.
 #[derive(Parser, Debug)]
-#[command(
-    name = "base60",
-    about = "View binary data as base-60 (sexagesimal) digit pairs",
-    version
-)]
-pub struct Cli {
-    /// Path to the file to view. If omitted, read from stdin.
-    pub file: Option<PathBuf>,
+#[command(name = "base60", version, about, long_about = None)]
+pub(crate) struct Cli {
+    /// Input file. If omitted, bytes are read from standard input.
+    pub(crate) file: Option<PathBuf>,
 
     /// Launch the interactive TUI viewer instead of printing to stdout.
     #[arg(short, long)]
-    pub interactive: bool,
+    pub(crate) interactive: bool,
 
     /// Skip this many bytes from the beginning of the input.
-    #[arg(short = 's', long, default_value_t = 0)]
-    pub skip: u64,
+    #[arg(short = 's', long, default_value_t = 0, value_name = "N")]
+    pub(crate) skip: u64,
 
     /// Read at most this many bytes.
-    #[arg(short = 'n', long)]
-    pub length: Option<u64>,
+    #[arg(short = 'n', long, value_name = "N")]
+    pub(crate) length: Option<u64>,
 }
