@@ -33,9 +33,11 @@ pub fn load(path: Option<&Path>, skip: u64, length: Option<u64>) -> Result<Bytes
             let map = unsafe { Mmap::map(&file) }
                 .with_context(|| format!("mmap {}", p.display()))?;
             let total = map.len();
-            let start = (skip as usize).min(total);
+            let start = usize::try_from(skip).unwrap_or(usize::MAX).min(total);
             let end = match length {
-                Some(n) => (start + n as usize).min(total),
+                Some(n) => start
+                    .saturating_add(usize::try_from(n).unwrap_or(usize::MAX))
+                    .min(total),
                 None => total,
             };
             Ok(Bytes::Mapped(map, start, end))
@@ -44,12 +46,16 @@ pub fn load(path: Option<&Path>, skip: u64, length: Option<u64>) -> Result<Bytes
             let mut buf = Vec::new();
             stdin().read_to_end(&mut buf).context("read stdin")?;
             let total = buf.len();
-            let start = (skip as usize).min(total);
+            let start = usize::try_from(skip).unwrap_or(usize::MAX).min(total);
             let end = match length {
-                Some(n) => (start + n as usize).min(total),
+                Some(n) => start
+                    .saturating_add(usize::try_from(n).unwrap_or(usize::MAX))
+                    .min(total),
                 None => total,
             };
-            Ok(Bytes::Owned(buf[start..end].to_vec()))
+            buf.truncate(end);
+            buf.drain(..start);
+            Ok(Bytes::Owned(buf))
         }
     }
 }
