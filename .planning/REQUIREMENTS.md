@@ -78,32 +78,46 @@ See `.planning/PROJECT.md` → Requirements → Validated. 23 shipped capabiliti
 
 ## Traceability
 
-(Populated by roadmapper during ROADMAP.md creation — each REQ-ID maps to exactly one phase.)
+Each v2 REQ-ID maps to exactly one phase in ROADMAP.md. No orphans, no duplicates.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| REF-01 | TBD | Pending |
-| REF-02 | TBD | Pending |
-| REF-03 | TBD | Pending |
-| TEST-01 | TBD | Pending |
-| TEST-02 | TBD | Pending |
-| TEST-03 | TBD | Pending |
-| TEST-04 | TBD | Pending |
-| TEST-05 | TBD | Pending |
-| PERF-01 | TBD | Pending |
-| PERF-02 | TBD | Pending |
-| PERF-03 | TBD | Pending |
-| PERF-04 | TBD | Pending |
-| PERF-05 | TBD | Pending |
-| PERF-06 | TBD | Pending |
-| CI-02 | TBD | Pending |
-| CI-03 | TBD | Pending |
+| REF-01 | Phase 1 — Refactor Foundations | Pending |
+| REF-02 | Phase 1 — Refactor Foundations | Pending |
+| REF-03 | Phase 4 — Tighten parse_run + Close Coverage Gaps | Pending |
+| TEST-01 | Phase 3 — Roundtrip Matrix + Fixture Integration | Pending |
+| TEST-02 | Phase 5 — Fuzz + Criterion Harnesses | Pending |
+| TEST-03 | Phase 3 — Roundtrip Matrix + Fixture Integration | Pending |
+| TEST-04 | Phase 2 — Env-Test Serialisation | Pending |
+| TEST-05 | Phase 4 — Tighten parse_run + Close Coverage Gaps | Pending |
+| PERF-01 | Phase 6 — Streaming + Performance Pass | Pending |
+| PERF-02 | Phase 6 — Streaming + Performance Pass | Pending |
+| PERF-03 | Phase 6 — Streaming + Performance Pass | Pending |
+| PERF-04 | Phase 6 — Streaming + Performance Pass | Pending |
+| PERF-05 | Phase 6 — Streaming + Performance Pass | Pending |
+| PERF-06 | Phase 5 — Fuzz + Criterion Harnesses | Pending |
+| CI-02 | Phase 7 — CI Hardening | Pending |
+| CI-03 | Phase 7 — CI Hardening | Pending |
 
 **Coverage:**
 - v2 requirements: 16 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 16 ⚠️ (roadmapper resolves)
+- Mapped to phases: 16 ✓
+- Unmapped: 0
+
+**Phase load:**
+- Phase 1: REF-01, REF-02 (2)
+- Phase 2: TEST-04 (1)
+- Phase 3: TEST-01, TEST-03 (2)
+- Phase 4: REF-03, TEST-05 (2)
+- Phase 5: TEST-02, PERF-06 (2)
+- Phase 6: PERF-01, PERF-02, PERF-03, PERF-04, PERF-05 (5)
+- Phase 7: CI-02, CI-03 (2)
+
+**Critical ordering** (enforced by phase graph in ROADMAP.md):
+- TEST-01 (Phase 3) precedes REF-03 (Phase 4) — roundtrip safety net
+- PERF-06 (Phase 5) precedes PERF-01..05 (Phase 6) — each perf PR needs a baseline
+- TEST-04 (Phase 2) precedes any new env-mutating test (Phase 3, Phase 4)
 
 ---
 *Requirements defined: 2026-04-23*
-*Last updated: 2026-04-23 after initialization*
+*Traceability populated: 2026-04-24 by roadmapper*
