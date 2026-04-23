@@ -20,9 +20,9 @@ mod tui;
 
 use anyhow::Result;
 use clap::Parser;
-use cli::{AnalyzeArgs, ColorChoice, Command, LensMode, TimeScale as CliTimeScale, ViewArgs};
+use cli::{AnalyzeArgs, ColorChoice, Command, ViewArgs};
 use color::Palette;
-use lens::{AngleLens, CuneiformLens, Lens, TabletLens, TimeLens, TimeScale as LensTimeScale};
+use lens::Lens;
 use std::io::{BufWriter, IsTerminal, stdout};
 
 fn main() -> Result<()> {
@@ -35,12 +35,20 @@ fn main() -> Result<()> {
 
 fn run_view(view: &ViewArgs) -> Result<()> {
     let bytes = reader::load(view.file.as_deref(), view.skip, view.length)?;
-    let lens = pick_lens(view.lens, view.time_scale, view.purist);
-    let lens_ref: Option<&dyn Lens> = lens.as_deref();
 
     if view.interactive {
-        tui::run(bytes.as_slice(), view.skip, lens_ref)?;
+        // The TUI owns the lens so the `L` key can cycle variants without
+        // the main process having to rebuild state between frames.
+        tui::run(
+            bytes.as_slice(),
+            view.skip,
+            view.lens,
+            view.time_scale,
+            view.purist,
+        )?;
     } else {
+        let lens = cli::build_lens(view.lens, view.time_scale, view.purist);
+        let lens_ref: Option<&dyn Lens> = lens.as_deref();
         let stdout = stdout();
         let palette = pick_palette(view.color, stdout.is_terminal());
         // `dump_all` wraps in its own BufWriter; wrap again only to coalesce
@@ -94,28 +102,6 @@ fn pick_palette(choice: ColorChoice, stdout_is_tty: bool) -> &'static Palette {
         &color::PALETTE_ANSI
     } else {
         &color::PALETTE_NONE
-    }
-}
-
-/// Turn CLI flags into a concrete [`Lens`] trait object, or [`None`] when
-/// the user asked for the default (no overlay).
-///
-/// `scale` and `purist` are only consulted when they apply to the chosen
-/// `mode`; unused combinations are silently ignored rather than flagged,
-/// matching how most Unix tools treat orthogonal flags.
-fn pick_lens(mode: LensMode, scale: CliTimeScale, purist: bool) -> Option<Box<dyn Lens>> {
-    match mode {
-        LensMode::None => None,
-        LensMode::Time => Some(Box::new(TimeLens {
-            scale: match scale {
-                CliTimeScale::Gar => LensTimeScale::Gar,
-                CliTimeScale::Sec => LensTimeScale::Sec,
-                CliTimeScale::Ms => LensTimeScale::Ms,
-            },
-        })),
-        LensMode::Angle => Some(Box::new(AngleLens)),
-        LensMode::Tablet => Some(Box::new(TabletLens { purist })),
-        LensMode::Cuneiform => Some(Box::new(CuneiformLens::auto())),
     }
 }
 

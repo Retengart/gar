@@ -1,5 +1,8 @@
 //! Command-line interface definition.
 
+use crate::lens::{
+    AngleLens, CuneiformLens, Lens, TabletLens, TimeLens, TimeScale as LensTimeScale,
+};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
@@ -31,6 +34,57 @@ pub(crate) enum LensMode {
     Tablet,
     /// Every digit rendered as Sumero-Babylonian wedge glyphs.
     Cuneiform,
+}
+
+impl LensMode {
+    /// Advance through the lens cycle used by the interactive viewer's
+    /// `L` key. Wraps back to [`LensMode::None`] from [`LensMode::Cuneiform`].
+    #[must_use]
+    pub(crate) const fn cycle(self) -> Self {
+        match self {
+            Self::None => Self::Time,
+            Self::Time => Self::Angle,
+            Self::Angle => Self::Tablet,
+            Self::Tablet => Self::Cuneiform,
+            Self::Cuneiform => Self::None,
+        }
+    }
+
+    /// Short label suitable for status bars: `"time"`, `"angle"`, …
+    /// `"—"` for [`LensMode::None`] so the indicator never vanishes.
+    #[must_use]
+    pub(crate) const fn label(self) -> &'static str {
+        match self {
+            Self::None => "—",
+            Self::Time => "time",
+            Self::Angle => "angle",
+            Self::Tablet => "tablet",
+            Self::Cuneiform => "cuneiform",
+        }
+    }
+}
+
+/// Turn a [`LensMode`] into a live trait object, or [`None`] for
+/// [`LensMode::None`]. Shared by the CLI dump path and the TUI so the
+/// `L` toggle and the `--lens` flag go through the same constructor.
+///
+/// `scale` only affects [`LensMode::Time`]; `purist` only affects
+/// [`LensMode::Tablet`]. Unused combinations are silently ignored.
+#[must_use]
+pub(crate) fn build_lens(mode: LensMode, scale: TimeScale, purist: bool) -> Option<Box<dyn Lens>> {
+    match mode {
+        LensMode::None => None,
+        LensMode::Time => Some(Box::new(TimeLens {
+            scale: match scale {
+                TimeScale::Gar => LensTimeScale::Gar,
+                TimeScale::Sec => LensTimeScale::Sec,
+                TimeScale::Ms => LensTimeScale::Ms,
+            },
+        })),
+        LensMode::Angle => Some(Box::new(AngleLens)),
+        LensMode::Tablet => Some(Box::new(TabletLens { purist })),
+        LensMode::Cuneiform => Some(Box::new(CuneiformLens::auto())),
+    }
 }
 
 /// Scale for a raw `u64` under `--lens=time`. One `gar` is ≈ 2 seconds.

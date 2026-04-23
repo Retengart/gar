@@ -1,5 +1,7 @@
 //! Interactive terminal viewer (optional `--interactive` flag).
 
+use crate::cli::{LensMode, TimeScale, build_lens};
+use crate::cuneiform;
 use crate::dump::{CHUNK, border_style, status_style, styled_line, title_style};
 use crate::lens::Lens;
 use anyhow::Result;
@@ -9,23 +11,31 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 
-const TITLE: &str =
-    " base60 — q: quit  hjkl: cursor  Ctrl-d/u: ½ page  g/G: top/bot  ^/$: line ends ";
+const TITLE: &str = " 𒁹 base60 — hjkl: cursor  L: lens  g/G: top/bot  ^/$: line ends  q: quit 𒌋 ";
 
 /// Run the interactive viewer over `data`, offsetting every displayed row
 /// by `base_offset` so it matches the position in the original file.
+///
+/// `initial_mode`, `scale`, and `purist` seed the lens state; `L` cycles
+/// through the five [`LensMode`] variants at runtime.
 ///
 /// # Errors
 ///
 /// Propagates any I/O error returned by [`ratatui`] while initializing or
 /// rendering the terminal, or by [`crossterm::event::read`] while polling
 /// keyboard input.
-pub(crate) fn run(data: &[u8], base_offset: u64, lens: Option<&dyn Lens>) -> Result<()> {
-    let mut state = ViewState::new(data.len());
+pub(crate) fn run(
+    data: &[u8],
+    base_offset: u64,
+    initial_mode: LensMode,
+    scale: TimeScale,
+    purist: bool,
+) -> Result<()> {
+    let mut state = ViewState::new(data.len(), initial_mode, scale, purist);
 
     ratatui::run(|terminal| -> Result<()> {
         loop {
-            terminal.draw(|frame| state.draw(frame, data, base_offset, lens))?;
+            terminal.draw(|frame| state.draw(frame, data, base_offset))?;
 
             let Event::Key(key) = event::read()? else {
                 continue;
@@ -53,10 +63,19 @@ struct ViewState {
     /// Used to compute half-page / full-page jumps without re-querying the
     /// terminal on every keypress.
     view_rows: usize,
+    /// Currently-active lens variant; cycled by the `L` key.
+    lens_mode: LensMode,
+    /// Pre-built trait object matching `lens_mode`. Rebuilt when the
+    /// mode changes so the render hot path stays indirection-free.
+    lens: Option<Box<dyn Lens>>,
+    /// Frozen at construction — `--time-scale` and `--purist` carry over
+    /// when the user cycles into [`LensMode::Time`] or [`LensMode::Tablet`].
+    scale: TimeScale,
+    purist: bool,
 }
 
 impl ViewState {
-    const fn new(data_len: usize) -> Self {
+    fn new(data_len: usize, initial_mode: LensMode, scale: TimeScale, purist: bool) -> Self {
         let total_lines = data_len.div_ceil(CHUNK);
         Self {
             data_len,
@@ -64,16 +83,14 @@ impl ViewState {
             scroll: 0,
             cursor: if data_len == 0 { None } else { Some(0) },
             view_rows: 1,
+            lens_mode: initial_mode,
+            lens: build_lens(initial_mode, scale, purist),
+            scale,
+            purist,
         }
     }
 
-    fn draw(
-        &mut self,
-        frame: &mut ratatui::Frame<'_>,
-        data: &[u8],
-        base_offset: u64,
-        lens: Option<&dyn Lens>,
-    ) {
+    fn draw(&mut self, frame: &mut ratatui::Frame<'_>, data: &[u8], base_offset: u64) {
         let [body_area, status_area] =
             Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(frame.area());
 
@@ -85,6 +102,7 @@ impl ViewState {
         let visible_end = self.scroll.saturating_add(rows).min(self.total_lines);
         let cursor_row = self.cursor.map(|b| b / CHUNK);
         let cursor_col = self.cursor.map(|b| b % CHUNK);
+        let lens_ref: Option<&dyn Lens> = self.lens.as_deref();
 
         let lines: Vec<Line<'_>> = (self.scroll..visible_end)
             .map(|row| {
@@ -96,7 +114,7 @@ impl ViewState {
                 } else {
                     None
                 };
-                styled_line(offset, &data[start..end], lens, cursor_here)
+                styled_line(offset, &data[start..end], lens_ref, cursor_here)
             })
             .collect();
 
@@ -159,7 +177,17 @@ impl ViewState {
             let abs = base_offset.saturating_add(byte as u64);
             spans.push(Span::styled("   cursor 0x", label));
             spans.push(Span::styled(format!("{abs:08x}"), Style::default()));
+            // When the cuneiform lens is active, also render the cursor
+            // offset in Sumero-Babylonian wedges — the tool is on-theme
+            // with itself.
+            if self.lens_mode == LensMode::Cuneiform {
+                spans.push(Span::styled(" ", dim));
+                spans.push(Span::styled(cuneiform_offset(abs), Style::default()));
+            }
         }
+
+        spans.push(Span::styled("   lens ", label));
+        spans.push(Span::styled(self.lens_mode.label(), Style::default()));
         spans.push(Span::raw(" "));
         Line::from(spans)
     }
@@ -189,9 +217,18 @@ impl ViewState {
             KeyCode::Char('G') | KeyCode::End => {
                 self.cursor = self.cursor.map(|_| self.data_len.saturating_sub(1));
             }
+            // Capital L cycles through the five lens modes: None → Time →
+            // Angle → Tablet → Cuneiform → None. Lower-case `l` already
+            // moves the cursor, hence the `Shift+l` choice.
+            KeyCode::Char('L') => self.cycle_lens(),
             _ => {}
         }
         std::ops::ControlFlow::Continue(())
+    }
+
+    fn cycle_lens(&mut self) {
+        self.lens_mode = self.lens_mode.cycle();
+        self.lens = build_lens(self.lens_mode, self.scale, self.purist);
     }
 
     const fn cursor_fwd(&mut self, n: usize) {
@@ -225,13 +262,38 @@ const fn byte_min(a: usize, b: usize) -> usize {
     if a < b { a } else { b }
 }
 
+/// Render `offset` (a byte address) as Sumero-Babylonian cuneiform,
+/// stripping leading zero-placeholders so the display is compact.
+///
+/// A u64 takes up to 11 base-60 digits, but offsets are usually small;
+/// skipping leading zeroes keeps the status line readable.
+fn cuneiform_offset(offset: u64) -> String {
+    let digits = crate::convert::u64_to_base60(offset);
+    let start = digits
+        .iter()
+        .position(|&d| d != 0)
+        .unwrap_or(digits.len() - 1);
+    let mut s = String::new();
+    for (i, &d) in digits[start..].iter().enumerate() {
+        if i > 0 {
+            s.push(' ');
+        }
+        s.push_str(cuneiform::glyph(d));
+    }
+    s
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn state(data_len: usize) -> ViewState {
+        ViewState::new(data_len, LensMode::None, TimeScale::Gar, false)
+    }
+
     #[test]
     fn new_empty_input_has_no_cursor() {
-        let s = ViewState::new(0);
+        let s = state(0);
         assert_eq!(s.total_lines, 0);
         assert_eq!(s.scroll, 0);
         assert_eq!(s.cursor, None);
@@ -239,13 +301,13 @@ mod tests {
 
     #[test]
     fn new_nonempty_input_starts_cursor_at_zero() {
-        let s = ViewState::new(80);
+        let s = state(80);
         assert_eq!(s.cursor, Some(0));
     }
 
     #[test]
     fn hjkl_moves_cursor_not_scroll() {
-        let mut s = ViewState::new(8 * 100); // 100 lines
+        let mut s = state(8 * 100); // 100 lines
         s.view_rows = 10;
 
         // Right: +1 byte.
@@ -269,21 +331,21 @@ mod tests {
 
     #[test]
     fn cursor_clamps_to_last_byte_on_g() {
-        let mut s = ViewState::new(8 * 100);
+        let mut s = state(8 * 100);
         let _ = s.handle_key(KeyCode::Char('G'), KeyModifiers::NONE);
         assert_eq!(s.cursor, Some(8 * 100 - 1));
     }
 
     #[test]
     fn line_end_jumps_to_last_byte_of_row() {
-        let mut s = ViewState::new(8 * 100);
+        let mut s = state(8 * 100);
         let _ = s.handle_key(KeyCode::Char('$'), KeyModifiers::NONE);
         assert_eq!(s.cursor, Some(CHUNK - 1));
     }
 
     #[test]
     fn line_start_returns_to_row_origin() {
-        let mut s = ViewState::new(8 * 100);
+        let mut s = state(8 * 100);
         // Move cursor to middle of a line then jump to line start.
         s.cursor = Some(CHUNK * 3 + 5);
         let _ = s.handle_key(KeyCode::Char('0'), KeyModifiers::NONE);
@@ -292,7 +354,7 @@ mod tests {
 
     #[test]
     fn cursor_at_last_byte_clamps_instead_of_overflowing() {
-        let mut s = ViewState::new(8 * 2); // 2 rows.
+        let mut s = state(8 * 2); // 2 rows.
         // Force cursor to last valid byte then try to move past.
         s.cursor = Some(15);
         let _ = s.handle_key(KeyCode::Char('l'), KeyModifiers::NONE);
@@ -301,7 +363,7 @@ mod tests {
 
     #[test]
     fn ctrl_d_moves_cursor_by_half_page_in_bytes() {
-        let mut s = ViewState::new(8 * 100);
+        let mut s = state(8 * 100);
         s.view_rows = 10;
         // Half page = 5 rows = 40 bytes.
         let _ = s.handle_key(KeyCode::Char('d'), KeyModifiers::CONTROL);
@@ -310,14 +372,14 @@ mod tests {
 
     #[test]
     fn quit_returns_break() {
-        let mut s = ViewState::new(80);
+        let mut s = state(80);
         let flow = s.handle_key(KeyCode::Char('q'), KeyModifiers::NONE);
         assert!(flow.is_break());
     }
 
     #[test]
     fn non_ctrl_d_does_not_scroll_half_page() {
-        let mut s = ViewState::new(8 * 100);
+        let mut s = state(8 * 100);
         s.view_rows = 20;
         // `d` without Ctrl is unbound; cursor must not budge.
         let _ = s.handle_key(KeyCode::Char('d'), KeyModifiers::NONE);
@@ -326,7 +388,7 @@ mod tests {
 
     #[test]
     fn scroll_into_view_pulls_viewport_when_cursor_drops_below() {
-        let mut s = ViewState::new(8 * 100);
+        let mut s = state(8 * 100);
         s.view_rows = 10;
         s.cursor = Some(8 * 50);
         s.scroll_into_view();
@@ -337,7 +399,7 @@ mod tests {
 
     #[test]
     fn scroll_into_view_pulls_viewport_when_cursor_jumps_above() {
-        let mut s = ViewState::new(8 * 100);
+        let mut s = state(8 * 100);
         s.view_rows = 10;
         s.scroll = 40;
         s.cursor = Some(8 * 5); // row 5 — above the viewport.
@@ -346,8 +408,32 @@ mod tests {
     }
 
     #[test]
+    fn shift_l_cycles_lens_mode() {
+        let mut s = state(80);
+        assert_eq!(s.lens_mode, LensMode::None);
+        let _ = s.handle_key(KeyCode::Char('L'), KeyModifiers::NONE);
+        assert_eq!(s.lens_mode, LensMode::Time);
+        let _ = s.handle_key(KeyCode::Char('L'), KeyModifiers::NONE);
+        assert_eq!(s.lens_mode, LensMode::Angle);
+        let _ = s.handle_key(KeyCode::Char('L'), KeyModifiers::NONE);
+        assert_eq!(s.lens_mode, LensMode::Tablet);
+        let _ = s.handle_key(KeyCode::Char('L'), KeyModifiers::NONE);
+        assert_eq!(s.lens_mode, LensMode::Cuneiform);
+        let _ = s.handle_key(KeyCode::Char('L'), KeyModifiers::NONE);
+        assert_eq!(s.lens_mode, LensMode::None);
+    }
+
+    #[test]
+    fn shift_l_rebuilds_lens_trait_object() {
+        let mut s = state(80);
+        assert!(s.lens.is_none());
+        let _ = s.handle_key(KeyCode::Char('L'), KeyModifiers::NONE);
+        assert!(s.lens.is_some());
+    }
+
+    #[test]
     fn status_line_empty_input() {
-        let s = ViewState::new(0);
+        let s = state(0);
         let line = s.status_line(0, 0);
         let joined: String = line
             .spans
@@ -358,8 +444,8 @@ mod tests {
     }
 
     #[test]
-    fn status_line_populated_mentions_cursor_offset() {
-        let mut s = ViewState::new(8 * 100);
+    fn status_line_populated_mentions_cursor_and_lens() {
+        let mut s = state(8 * 100);
         s.scroll = 5;
         s.cursor = Some(42);
         let line = s.status_line(0x100, 20);
@@ -371,5 +457,33 @@ mod tests {
         assert!(joined.contains(" lines 6-20 / 100"));
         assert!(joined.contains("bytes"));
         assert!(joined.contains("cursor 0x0000012a"));
+        assert!(joined.contains("lens —"));
+    }
+
+    #[test]
+    fn status_line_shows_cuneiform_offset_when_cuneiform_lens_active() {
+        let mut s = ViewState::new(80, LensMode::Cuneiform, TimeScale::Gar, false);
+        s.cursor = Some(60); // offset encodes to "1:0" in base 60.
+        let line = s.status_line(0, 10);
+        let joined: String = line
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect();
+        // We emit one cuneiform wedge-pair followed by a zero-placeholder.
+        assert!(joined.contains('𒁹'), "expected wedge in {joined:?}");
+        assert!(joined.contains('𒑰'), "expected zero mark in {joined:?}");
+    }
+
+    #[test]
+    fn cuneiform_offset_strips_leading_zeros() {
+        let rendered = cuneiform_offset(5);
+        // `5` in base-60 is `00:00:...:05` — only the five-wedge digit should remain.
+        assert_eq!(rendered, "𒁹𒁹𒁹𒁹𒁹");
+    }
+
+    #[test]
+    fn cuneiform_offset_zero_renders_single_placeholder() {
+        assert_eq!(cuneiform_offset(0), "𒑰");
     }
 }
