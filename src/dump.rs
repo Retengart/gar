@@ -13,7 +13,7 @@ use crate::color::{
 };
 use crate::convert::{DIGITS, u64_to_base60};
 use crate::lens::Lens;
-use ratatui::style::Style;
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use std::io::{self, BufWriter, Write};
 
@@ -149,8 +149,15 @@ pub(crate) fn dump_all<W: Write>(
 ///
 /// Unlike [`write_line`], this path targets a `Vec<Span>` so each token
 /// carries its own [`Style`], letting the terminal do the rendering with
-/// true-color fidelity where supported.
-pub(crate) fn styled_line(offset: u64, bytes: &[u8], lens: Option<&dyn Lens>) -> Line<'static> {
+/// true-color fidelity where supported. When `cursor_in_line` is `Some`,
+/// the corresponding byte in the ASCII column is rendered with reversed
+/// video so the cursor is obvious regardless of colour scheme.
+pub(crate) fn styled_line(
+    offset: u64,
+    bytes: &[u8],
+    lens: Option<&dyn Lens>,
+    cursor_in_line: Option<usize>,
+) -> Line<'static> {
     debug_assert!(bytes.len() <= CHUNK);
     let chunk_be = be_u64(bytes);
     let digits = u64_to_base60(chunk_be);
@@ -179,13 +186,26 @@ pub(crate) fn styled_line(offset: u64, bytes: &[u8], lens: Option<&dyn Lens>) ->
     spans.push(Span::styled("|", delim));
     let print = printable_style();
     let dot = dot_style();
-    for &src in bytes {
-        if src.is_ascii_graphic() || src == b' ' {
-            // `src` is ASCII, so this `char` cast is exact.
-            spans.push(Span::styled(String::from(src as char), print));
+    for (i, &src) in bytes.iter().enumerate() {
+        let base = if src.is_ascii_graphic() || src == b' ' {
+            print
         } else {
-            spans.push(Span::styled(".", dot));
-        }
+            dot
+        };
+        // Reverse-video the exact cursor byte so the viewer can see where
+        // hjkl motion lands without needing a second colour scheme.
+        let style = if cursor_in_line == Some(i) {
+            base.add_modifier(Modifier::REVERSED)
+        } else {
+            base
+        };
+        let ch = if src.is_ascii_graphic() || src == b' ' {
+            // `src` is ASCII, so this `char` cast is exact.
+            src as char
+        } else {
+            '.'
+        };
+        spans.push(Span::styled(String::from(ch), style));
     }
     spans.push(Span::styled("|", delim));
 
@@ -346,7 +366,7 @@ mod tests {
     #[test]
     fn styled_line_has_expected_span_count() {
         let bytes = b"abcdefgh";
-        let line = styled_line(0, bytes, None);
+        let line = styled_line(0, bytes, None, None);
         // 1 offset + 1 gap + 11 digits + 10 separators + 1 gap
         // + 1 open delim + 8 ascii + 1 close delim = 34.
         assert_eq!(
@@ -358,8 +378,8 @@ mod tests {
     #[test]
     fn styled_line_with_lens_adds_two_spans() {
         let bytes = b"abcdefgh";
-        let plain = styled_line(0, bytes, None);
-        let lensed = styled_line(0, bytes, Some(&TimeLens::default()));
+        let plain = styled_line(0, bytes, None, None);
+        let lensed = styled_line(0, bytes, Some(&TimeLens::default()), None);
         // Exactly two extra spans: a two-space gap and the lens content.
         assert_eq!(lensed.spans.len(), plain.spans.len() + 2);
     }
@@ -367,9 +387,48 @@ mod tests {
     #[test]
     fn styled_line_text_matches_mono_line() {
         let bytes = b"Hi there";
-        let line = styled_line(0x42, bytes, None);
+        let line = styled_line(0x42, bytes, None, None);
         let joined: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
         let mono = line_mono(0x42, bytes);
         assert_eq!(joined, mono.trim_end_matches('\n'));
+    }
+
+    #[test]
+    fn styled_line_cursor_flags_exact_byte_with_reversed_video() {
+        let bytes = b"abcdefgh";
+        let line = styled_line(0, bytes, None, Some(3));
+        // The ascii spans are the last 8 spans before the closing delim;
+        // find them by filtering for single-char ascii-letter content.
+        let ascii_spans: Vec<&Span<'_>> = line
+            .spans
+            .iter()
+            .filter(|s| {
+                s.content.len() == 1
+                    && s.content
+                        .chars()
+                        .next()
+                        .is_some_and(|c| c.is_ascii_alphabetic())
+            })
+            .collect();
+        assert_eq!(ascii_spans.len(), 8);
+        // Byte 3 ('d') must have REVERSED; its neighbours must not.
+        assert!(
+            ascii_spans[3]
+                .style
+                .add_modifier
+                .contains(Modifier::REVERSED)
+        );
+        assert!(
+            !ascii_spans[2]
+                .style
+                .add_modifier
+                .contains(Modifier::REVERSED)
+        );
+        assert!(
+            !ascii_spans[4]
+                .style
+                .add_modifier
+                .contains(Modifier::REVERSED)
+        );
     }
 }
