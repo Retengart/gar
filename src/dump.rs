@@ -8,9 +8,11 @@
 //!   for the interactive viewer.
 
 use crate::color::{
-    self, Palette, delim_style, digit_style, dot_style, offset_style, printable_style, sep_style,
+    self, Palette, delim_style, digit_style, dot_style, lens_style, offset_style, printable_style,
+    sep_style,
 };
 use crate::convert::{DIGITS, u64_to_base60};
+use crate::lens::Lens;
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use std::io::{self, BufWriter, Write};
@@ -56,9 +58,11 @@ pub(crate) fn write_line<W: Write>(
     offset: u64,
     bytes: &[u8],
     palette: &Palette,
+    lens: Option<&dyn Lens>,
 ) -> io::Result<()> {
     debug_assert!(bytes.len() <= CHUNK);
-    let digits = u64_to_base60(be_u64(bytes));
+    let chunk_be = be_u64(bytes);
+    let digits = u64_to_base60(chunk_be);
 
     // Offset column.
     w.write_all(palette.offset.as_bytes())?;
@@ -104,6 +108,17 @@ pub(crate) fn write_line<W: Write>(
     w.write_all(palette.delim.as_bytes())?;
     w.write_all(b"|")?;
     w.write_all(palette.reset.as_bytes())?;
+
+    // Optional semantic overlay. Rendered once per line and forwarded as a
+    // single `write_all`; the lens allocates its own string, so the cost
+    // only applies when a lens is active.
+    if let Some(lens) = lens {
+        w.write_all(b"  ")?;
+        w.write_all(palette.lens.as_bytes())?;
+        w.write_all(lens.render(chunk_be).as_bytes())?;
+        w.write_all(palette.reset.as_bytes())?;
+    }
+
     w.write_all(b"\n")
 }
 
@@ -117,6 +132,7 @@ pub(crate) fn dump_all<W: Write>(
     base_offset: u64,
     w: W,
     palette: &Palette,
+    lens: Option<&dyn Lens>,
 ) -> io::Result<()> {
     let mut out = BufWriter::new(w);
     for (idx, chunk) in data.chunks(CHUNK).enumerate() {
@@ -124,7 +140,7 @@ pub(crate) fn dump_all<W: Write>(
         // already fits). The `u64` cast is lossless on 64-bit targets and
         // saturating-equivalent on 32-bit ones because `usize` ≤ `u64`.
         let offset = base_offset.saturating_add((idx * CHUNK) as u64);
-        write_line(&mut out, offset, chunk, palette)?;
+        write_line(&mut out, offset, chunk, palette, lens)?;
     }
     out.flush()
 }
@@ -134,13 +150,19 @@ pub(crate) fn dump_all<W: Write>(
 /// Unlike [`write_line`], this path targets a `Vec<Span>` so each token
 /// carries its own [`Style`], letting the terminal do the rendering with
 /// true-color fidelity where supported.
-pub(crate) fn styled_line(offset: u64, bytes: &[u8]) -> Line<'static> {
+pub(crate) fn styled_line(
+    offset: u64,
+    bytes: &[u8],
+    lens: Option<&dyn Lens>,
+) -> Line<'static> {
     debug_assert!(bytes.len() <= CHUNK);
-    let digits = u64_to_base60(be_u64(bytes));
+    let chunk_be = be_u64(bytes);
+    let digits = u64_to_base60(chunk_be);
 
     // 1 offset + 1 gap + (DIGITS digit spans + DIGITS-1 separator spans)
-    // + 1 gap + 1 opening delim + CHUNK ascii spans + 1 closing delim.
-    let mut spans: Vec<Span<'static>> = Vec::with_capacity(5 + DIGITS * 2 + CHUNK);
+    // + 1 gap + 1 opening delim + CHUNK ascii spans + 1 closing delim
+    // + up to 2 optional lens spans (gap + rendered).
+    let mut spans: Vec<Span<'static>> = Vec::with_capacity(5 + DIGITS * 2 + CHUNK + 2);
 
     spans.push(Span::styled(
         format!("{offset:0OFFSET_WIDTH$x}"),
@@ -170,6 +192,12 @@ pub(crate) fn styled_line(offset: u64, bytes: &[u8]) -> Line<'static> {
         }
     }
     spans.push(Span::styled("|", delim));
+
+    if let Some(lens) = lens {
+        spans.push(Span::raw("  "));
+        spans.push(Span::styled(lens.render(chunk_be), lens_style()));
+    }
+
     Line::from(spans)
 }
 
@@ -194,16 +222,23 @@ pub(crate) const fn status_style() -> Style {
 mod tests {
     use super::*;
     use crate::color::{PALETTE_ANSI, PALETTE_NONE};
+    use crate::lens::{AngleLens, TimeLens};
 
     fn line_mono(offset: u64, bytes: &[u8]) -> String {
         let mut buf = Vec::new();
-        write_line(&mut buf, offset, bytes, &PALETTE_NONE).unwrap();
+        write_line(&mut buf, offset, bytes, &PALETTE_NONE, None).unwrap();
         String::from_utf8(buf).unwrap()
     }
 
     fn line_ansi(offset: u64, bytes: &[u8]) -> String {
         let mut buf = Vec::new();
-        write_line(&mut buf, offset, bytes, &PALETTE_ANSI).unwrap();
+        write_line(&mut buf, offset, bytes, &PALETTE_ANSI, None).unwrap();
+        String::from_utf8(buf).unwrap()
+    }
+
+    fn line_mono_with_lens(offset: u64, bytes: &[u8], lens: &dyn Lens) -> String {
+        let mut buf = Vec::new();
+        write_line(&mut buf, offset, bytes, &PALETTE_NONE, Some(lens)).unwrap();
         String::from_utf8(buf).unwrap()
     }
 
@@ -248,12 +283,27 @@ mod tests {
     fn dump_all_emits_one_line_per_chunk() {
         let data: Vec<u8> = (0..24).collect();
         let mut buf = Vec::new();
-        dump_all(&data, 0x100, &mut buf, &PALETTE_NONE).unwrap();
+        dump_all(&data, 0x100, &mut buf, &PALETTE_NONE, None).unwrap();
         let rendered = String::from_utf8(buf).unwrap();
         assert_eq!(rendered.lines().count(), 3);
         assert!(rendered.starts_with("00000100  "));
         assert!(rendered.lines().nth(1).unwrap().starts_with("00000108  "));
         assert!(rendered.lines().nth(2).unwrap().starts_with("00000110  "));
+    }
+
+    #[test]
+    fn mono_with_time_lens_appends_overlay() {
+        let s = line_mono_with_lens(0, &[0_u8; 8], &TimeLens::default());
+        assert!(s.ends_with("|........|  0d 00𒁹 00:00\n"));
+    }
+
+    #[test]
+    fn mono_with_angle_lens_appends_overlay() {
+        let mut bytes = [0_u8; 8];
+        // Encode 3_600_000 (= 1°) as big-endian u64.
+        bytes[..].copy_from_slice(&3_600_000_u64.to_be_bytes());
+        let s = line_mono_with_lens(0, &bytes, &AngleLens);
+        assert!(s.ends_with("001°00′00.000″\n"));
     }
 
     #[test]
@@ -300,7 +350,7 @@ mod tests {
     #[test]
     fn styled_line_has_expected_span_count() {
         let bytes = b"abcdefgh";
-        let line = styled_line(0, bytes);
+        let line = styled_line(0, bytes, None);
         // 1 offset + 1 gap + 11 digits + 10 separators + 1 gap
         // + 1 open delim + 8 ascii + 1 close delim = 34.
         assert_eq!(
@@ -310,9 +360,18 @@ mod tests {
     }
 
     #[test]
+    fn styled_line_with_lens_adds_two_spans() {
+        let bytes = b"abcdefgh";
+        let plain = styled_line(0, bytes, None);
+        let lensed = styled_line(0, bytes, Some(&TimeLens::default()));
+        // Exactly two extra spans: a two-space gap and the lens content.
+        assert_eq!(lensed.spans.len(), plain.spans.len() + 2);
+    }
+
+    #[test]
     fn styled_line_text_matches_mono_line() {
         let bytes = b"Hi there";
-        let line = styled_line(0x42, bytes);
+        let line = styled_line(0x42, bytes, None);
         let joined: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
         let mono = line_mono(0x42, bytes);
         assert_eq!(joined, mono.trim_end_matches('\n'));

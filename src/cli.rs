@@ -16,6 +16,35 @@ pub(crate) enum ColorChoice {
     Never,
 }
 
+/// Optional semantic overlay appended to each dump line.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, ValueEnum)]
+pub(crate) enum LensMode {
+    /// No overlay (default; identical to previous behaviour).
+    #[default]
+    None,
+    /// Babylonian time: `day beru:uš:gar`.
+    Time,
+    /// Sexagesimal angle: `deg°arcmin′arcsec.mas″`.
+    Angle,
+    /// Scribal tablet view — base-60 digits framed, optionally with the
+    /// Sumerian no-zero placeholder (see `--purist`).
+    Tablet,
+    /// Every digit rendered as Sumero-Babylonian wedge glyphs.
+    Cuneiform,
+}
+
+/// Scale for a raw `u64` under `--lens=time`. One `gar` is ≈ 2 seconds.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, ValueEnum)]
+pub(crate) enum TimeScale {
+    /// Raw Sumerian `gar` ticks (historical default).
+    #[default]
+    Gar,
+    /// Modern seconds (divide by 2 to recover `gar`).
+    Sec,
+    /// Modern milliseconds (divide by 2000 to recover `gar`).
+    Ms,
+}
+
 /// View binary data as base-60 (sexagesimal) digit pairs in the
 /// Sumero-Babylonian positional notation.
 #[derive(Parser, Debug)]
@@ -45,4 +74,28 @@ pub(crate) struct Cli {
         value_name = "WHEN",
     )]
     pub(crate) color: ColorChoice,
+
+    /// Append a semantic overlay column to every dump line.
+    #[arg(
+        long,
+        value_enum,
+        default_value_t = LensMode::None,
+        value_name = "MODE",
+    )]
+    pub(crate) lens: LensMode,
+
+    /// Scale used when interpreting the chunk as time (`--lens=time`).
+    #[arg(
+        long,
+        value_enum,
+        default_value_t = TimeScale::Gar,
+        value_name = "UNIT",
+    )]
+    pub(crate) time_scale: TimeScale,
+
+    /// Use the Sumerian no-zero placeholder in `--lens=tablet`.
+    /// Early Sumerian scribes left a gap where a positional zero later
+    /// stood; this flag restores that behaviour.
+    #[arg(long)]
+    pub(crate) purist: bool,
 }

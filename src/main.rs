@@ -11,22 +11,27 @@
 mod cli;
 mod color;
 mod convert;
+mod cuneiform;
 mod dump;
+mod lens;
 mod reader;
 mod tui;
 
 use anyhow::Result;
 use clap::Parser;
-use cli::ColorChoice;
+use cli::{ColorChoice, LensMode, TimeScale as CliTimeScale};
 use color::Palette;
+use lens::{AngleLens, CuneiformLens, Lens, TabletLens, TimeLens, TimeScale as LensTimeScale};
 use std::io::{BufWriter, IsTerminal, stdout};
 
 fn main() -> Result<()> {
     let args = cli::Cli::parse();
     let bytes = reader::load(args.file.as_deref(), args.skip, args.length)?;
+    let lens = pick_lens(args.lens, args.time_scale, args.purist);
+    let lens_ref: Option<&dyn Lens> = lens.as_deref();
 
     if args.interactive {
-        tui::run(bytes.as_slice(), args.skip)?;
+        tui::run(bytes.as_slice(), args.skip, lens_ref)?;
     } else {
         let stdout = stdout();
         let palette = pick_palette(args.color, stdout.is_terminal());
@@ -37,6 +42,7 @@ fn main() -> Result<()> {
             args.skip,
             BufWriter::new(stdout.lock()),
             palette,
+            lens_ref,
         );
         match result {
             Ok(()) => {}
@@ -68,6 +74,28 @@ fn pick_palette(choice: ColorChoice, stdout_is_tty: bool) -> &'static Palette {
         &color::PALETTE_ANSI
     } else {
         &color::PALETTE_NONE
+    }
+}
+
+/// Turn CLI flags into a concrete [`Lens`] trait object, or [`None`] when
+/// the user asked for the default (no overlay).
+///
+/// `scale` and `purist` are only consulted when they apply to the chosen
+/// `mode`; unused combinations are silently ignored rather than flagged,
+/// matching how most Unix tools treat orthogonal flags.
+fn pick_lens(mode: LensMode, scale: CliTimeScale, purist: bool) -> Option<Box<dyn Lens>> {
+    match mode {
+        LensMode::None => None,
+        LensMode::Time => Some(Box::new(TimeLens {
+            scale: match scale {
+                CliTimeScale::Gar => LensTimeScale::Gar,
+                CliTimeScale::Sec => LensTimeScale::Sec,
+                CliTimeScale::Ms => LensTimeScale::Ms,
+            },
+        })),
+        LensMode::Angle => Some(Box::new(AngleLens)),
+        LensMode::Tablet => Some(Box::new(TabletLens { purist })),
+        LensMode::Cuneiform => Some(Box::new(CuneiformLens::auto())),
     }
 }
 

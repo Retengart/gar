@@ -1,6 +1,7 @@
 //! Interactive terminal viewer (optional `--interactive` flag).
 
 use crate::dump::{CHUNK, border_style, status_style, styled_line, title_style};
+use crate::lens::Lens;
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::layout::{Constraint, Layout};
@@ -18,12 +19,12 @@ const TITLE: &str = " base60 — q: quit  j/k: line  Ctrl-d/u: half page  g/G: t
 /// Propagates any I/O error returned by [`ratatui`] while initializing or
 /// rendering the terminal, or by [`crossterm::event::read`] while polling
 /// keyboard input.
-pub(crate) fn run(data: &[u8], base_offset: u64) -> Result<()> {
+pub(crate) fn run(data: &[u8], base_offset: u64, lens: Option<&dyn Lens>) -> Result<()> {
     let mut state = ViewState::new(data.len());
 
     ratatui::run(|terminal| -> Result<()> {
         loop {
-            terminal.draw(|frame| state.draw(frame, data, base_offset))?;
+            terminal.draw(|frame| state.draw(frame, data, base_offset, lens))?;
 
             let Event::Key(key) = event::read()? else {
                 continue;
@@ -61,7 +62,13 @@ impl ViewState {
         }
     }
 
-    fn draw(&mut self, frame: &mut ratatui::Frame<'_>, data: &[u8], base_offset: u64) {
+    fn draw(
+        &mut self,
+        frame: &mut ratatui::Frame<'_>,
+        data: &[u8],
+        base_offset: u64,
+        lens: Option<&dyn Lens>,
+    ) {
         let [body_area, status_area] =
             Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(frame.area());
 
@@ -76,7 +83,7 @@ impl ViewState {
                 let start = row * CHUNK;
                 let end = (start + CHUNK).min(data.len());
                 let offset = base_offset.saturating_add(start as u64);
-                styled_line(offset, &data[start..end])
+                styled_line(offset, &data[start..end], lens)
             })
             .collect();
 

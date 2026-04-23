@@ -23,6 +23,7 @@ pub(crate) struct Palette {
     pub(crate) delim: &'static str,
     pub(crate) printable: &'static str,
     pub(crate) dot: &'static str,
+    pub(crate) lens: &'static str,
     pub(crate) reset: &'static str,
     zero: &'static str,
     low: &'static str,
@@ -39,6 +40,7 @@ pub(crate) static PALETTE_NONE: Palette = Palette {
     delim: "",
     printable: "",
     dot: "",
+    lens: "",
     reset: "",
     zero: "",
     low: "",
@@ -54,6 +56,9 @@ pub(crate) static PALETTE_ANSI: Palette = Palette {
     delim: "\x1b[2;36m",
     printable: "\x1b[36m",
     dot: "\x1b[90m",
+    // Magenta distinguishes the lens overlay from the cyan ASCII column,
+    // so a user can tell at a glance which bytes are raw vs. interpreted.
+    lens: "\x1b[35m",
     reset: "\x1b[0m",
     zero: "\x1b[90m",
     low: "\x1b[32m",
@@ -107,6 +112,10 @@ pub(crate) const fn dot_style() -> Style {
     Style::new().fg(Color::DarkGray)
 }
 
+pub(crate) const fn lens_style() -> Style {
+    Style::new().fg(Color::Magenta)
+}
+
 pub(crate) const fn title_style() -> Style {
     Style::new()
         .fg(Color::Black)
@@ -147,5 +156,14 @@ mod tests {
         }
         assert_eq!(PALETTE_NONE.offset, "");
         assert_eq!(PALETTE_NONE.reset, "");
+        assert_eq!(PALETTE_NONE.lens, "");
+    }
+
+    #[test]
+    fn ansi_palette_has_distinct_lens_colour() {
+        // Magenta for lens, cyan for the ASCII column — the two should
+        // never collide or a user loses the visual distinction.
+        assert_ne!(PALETTE_ANSI.lens, PALETTE_ANSI.printable);
+        assert!(PALETTE_ANSI.lens.starts_with("\x1b["));
     }
 }
