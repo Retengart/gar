@@ -14,7 +14,7 @@ use ratatui::style::{Color, Modifier, Style};
 
 /// ANSI escape fragments for each token kind used by the CLI path.
 ///
-/// [`Palette::NONE`] is an all-empty palette: no escapes are emitted, which
+/// [`PALETTE_NONE`] is an all-empty palette: no escapes are emitted, which
 /// is both the correct behaviour for non-TTY output and a way to remove
 /// all branching from the hot path — the writes become zero-byte no-ops.
 pub(crate) struct Palette {
