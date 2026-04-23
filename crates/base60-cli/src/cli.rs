@@ -1,6 +1,6 @@
 //! Command-line interface definition.
 
-use crate::lens::{
+use base60_core::lens::{
     AngleLens, CuneiformLens, Lens, TabletLens, TimeLens, TimeScale as LensTimeScale,
 };
 use clap::{Args, Parser, Subcommand, ValueEnum};

@@ -93,11 +93,16 @@ name = "base60"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base60-core",
  "clap",
  "crossterm",
  "memmap2",
  "ratatui",
 ]
+
+[[package]]
+name = "base60-core"
+version = "0.1.0"
 
 [[package]]
 name = "base64"

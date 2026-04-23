@@ -11,8 +11,8 @@ use crate::color::{
     self, Palette, delim_style, digit_style, dot_style, lens_style, offset_style, printable_style,
     sep_style,
 };
-use crate::convert::{DIGITS, u64_to_base60};
-use crate::lens::Lens;
+use base60_core::convert::{DIGITS, u64_to_base60};
+use base60_core::lens::Lens;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use std::io::{self, BufWriter, Write};
@@ -20,7 +20,7 @@ use std::io::{self, BufWriter, Write};
 /// Number of bytes consumed per output line.
 ///
 /// One line ≡ one big-endian [`u64`] ≡ one base-60 number of up to
-/// [`crate::convert::DIGITS`] digits.
+/// [`base60_core::convert::DIGITS`] digits.
 pub(crate) const CHUNK: usize = 8;
 
 /// Width of the zero-padded hex offset column.
@@ -238,7 +238,7 @@ pub(crate) const fn status_style() -> Style {
 mod tests {
     use super::*;
     use crate::color::{PALETTE_ANSI, PALETTE_NONE};
-    use crate::lens::{AngleLens, TimeLens};
+    use base60_core::lens::{AngleLens, TimeLens};
 
     fn line_mono(offset: u64, bytes: &[u8]) -> String {
         let mut buf = Vec::new();

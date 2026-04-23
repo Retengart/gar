@@ -11,22 +11,19 @@
 mod analyze;
 mod cli;
 mod color;
-mod convert;
-mod cuneiform;
 mod decode;
 mod dump;
 mod format;
-mod lens;
 mod persist;
 mod reader;
 mod search;
 mod tui;
 
 use anyhow::Result;
+use base60_core::Lens;
 use clap::Parser;
 use cli::{AnalyzeArgs, ColorChoice, Command, DecodeArgs, Format, ViewArgs};
 use color::Palette;
-use lens::Lens;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, IsTerminal, stdout};
 

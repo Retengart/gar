@@ -33,7 +33,7 @@ const ZERO_MARK: &str = "𒑰";
 /// pair (e.g. `07`, `42`). Used when the terminal cannot render cuneiform.
 #[inline]
 #[must_use]
-pub(crate) fn ascii_pair(d: u8) -> [u8; 2] {
+pub fn ascii_pair(d: u8) -> [u8; 2] {
     debug_assert!(d < 60);
     [b'0' + d / 10, b'0' + d % 10]
 }
@@ -68,7 +68,7 @@ static GLYPHS: LazyLock<[String; 60]> = LazyLock::new(|| {
 /// panic fires instead — both are bugs in the caller.
 #[inline]
 #[must_use]
-pub(crate) fn glyph(d: u8) -> &'static str {
+pub fn glyph(d: u8) -> &'static str {
     debug_assert!(d < 60);
     &GLYPHS[d as usize]
 }
@@ -81,7 +81,7 @@ pub(crate) fn glyph(d: u8) -> &'static str {
 /// 1. `NO_UNICODE` env var set and non-empty — explicit opt-out.
 /// 2. `TERM=dumb` — terminal does not support rich glyphs.
 #[must_use]
-pub(crate) fn ascii_fallback_forced() -> bool {
+pub fn ascii_fallback_forced() -> bool {
     if std::env::var_os("NO_UNICODE").is_some_and(|v| !v.is_empty()) {
         return true;
     }

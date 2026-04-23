@@ -1,0 +1,26 @@
+[package]
+name = "base60"
+description = "View binary data as Sumero-Babylonian base-60 digit pairs."
+keywords = ["hexdump", "sexagesimal", "base60", "binary", "viewer"]
+categories = ["command-line-utilities", "visualization"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "base60"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.102"
+clap = { version = "4.6.1", features = ["derive"] }
+crossterm = "0.29.0"
+memmap2 = "0.9.10"
+ratatui = "0.30.0"
+base60-core = { path = "../base60-core" }
+
+[lints]
+workspace = true

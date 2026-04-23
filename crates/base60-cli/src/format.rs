@@ -14,9 +14,9 @@
 //! it without a companion library. HTML output mirrors the terminal's
 //! Sumerian heat-map palette via inline CSS classes.
 
-use crate::convert::u64_to_base60;
 use crate::dump::CHUNK;
-use crate::lens::Lens;
+use base60_core::convert::u64_to_base60;
+use base60_core::lens::Lens;
 use std::io::{self, BufWriter, Write};
 
 /// Parse `bytes` (right-padded with zeros to 8) as big-endian `u64`.
@@ -228,7 +228,7 @@ fn write_html_char<W: Write>(w: &mut W, c: char) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lens::{AngleLens, TimeLens};
+    use base60_core::lens::{AngleLens, TimeLens};
 
     fn json(data: &[u8], lens: Option<&dyn Lens>) -> String {
         let mut buf = Vec::new();

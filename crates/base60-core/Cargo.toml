@@ -1,0 +1,14 @@
+[package]
+name = "base60-core"
+description = "Base-60 conversion, Sumero-Babylonian lenses, and URL-safe encoding primitives."
+keywords = ["sexagesimal", "base60", "cuneiform", "encoding"]
+categories = ["encoding", "no-std"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true

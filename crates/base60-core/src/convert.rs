@@ -6,7 +6,7 @@
 //! `60.pow(11) ≈ 3.65 · 10¹⁹ > u64::MAX ≈ 1.84 · 10¹⁹`.
 
 /// Number of base-60 digits required to represent any [`u64`].
-pub(crate) const DIGITS: usize = 11;
+pub const DIGITS: usize = 11;
 
 /// Convert `n` into its base-60 digits, most-significant first.
 ///
@@ -14,7 +14,7 @@ pub(crate) const DIGITS: usize = 11;
 /// ones place. Every returned byte is guaranteed to be `< 60`.
 #[must_use]
 #[inline]
-pub(crate) fn u64_to_base60(mut n: u64) -> [u8; DIGITS] {
+pub fn u64_to_base60(mut n: u64) -> [u8; DIGITS] {
     let mut out = [0_u8; DIGITS];
     for slot in out.iter_mut().rev() {
         // `n % 60` is always in `0..60`, so the truncating cast is exact.

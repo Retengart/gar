@@ -14,7 +14,7 @@
 //! big-endian bytes. A pair with a digit `>= 60` is a malformed input
 //! and raises a descriptive error carrying the line number.
 
-use crate::convert::DIGITS;
+use base60_core::convert::DIGITS;
 use std::io::{self, BufRead, Write};
 
 /// Digit-pair width: two ASCII decimal chars per base-60 digit.

@@ -2,12 +2,12 @@
 
 use crate::analyze::{self, Analysis, DEFAULT_WINDOW, RegionKind};
 use crate::cli::{LensMode, TimeScale, build_lens};
-use crate::cuneiform;
 use crate::dump::{CHUNK, border_style, status_style, styled_line, title_style};
-use crate::lens::Lens;
 use crate::persist::{self, PersistedState};
 use crate::search::{self, Pattern};
 use anyhow::Result;
+use base60_core::cuneiform;
+use base60_core::lens::Lens;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::layout::{Constraint, Layout};
 use ratatui::style::Style;
@@ -618,7 +618,7 @@ const fn region_label(kind: RegionKind) -> &'static str {
 /// A u64 takes up to 11 base-60 digits, but offsets are usually small;
 /// skipping leading zeroes keeps the status line readable.
 fn cuneiform_offset(offset: u64) -> String {
-    let digits = crate::convert::u64_to_base60(offset);
+    let digits = base60_core::convert::u64_to_base60(offset);
     let start = digits
         .iter()
         .position(|&d| d != 0)

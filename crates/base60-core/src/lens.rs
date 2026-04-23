@@ -21,7 +21,7 @@ use crate::cuneiform;
 /// One Sumerian `gar` is roughly two modern seconds, so a value expressed
 /// in modern seconds or milliseconds needs scaling before decomposition.
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
-pub(crate) enum TimeScale {
+pub enum TimeScale {
     /// Raw Sumerian `gar` ticks (≈ 2 seconds each). The historical choice.
     #[default]
     Gar,
@@ -32,7 +32,7 @@ pub(crate) enum TimeScale {
 }
 
 /// Semantic overlay attached to each dump row.
-pub(crate) trait Lens: Send + Sync {
+pub trait Lens: Send + Sync {
     /// Render the overlay for a chunk already parsed as big-endian `u64`.
     fn render(&self, chunk: u64) -> String;
 }
@@ -47,8 +47,8 @@ pub(crate) trait Lens: Send + Sync {
 /// * `1 beru = 60 uš`   (≈ 2 minutes)
 /// * `1 uš   = 60 gar`  (≈ 2 seconds)
 #[derive(Copy, Clone, Debug, Default)]
-pub(crate) struct TimeLens {
-    pub(crate) scale: TimeScale,
+pub struct TimeLens {
+    pub scale: TimeScale,
 }
 
 impl TimeLens {
@@ -84,7 +84,7 @@ impl Lens for TimeLens {
 /// Base-60 angle notation has survived from Babylonian astronomy into
 /// modern coordinates: `1° = 60′`, `1′ = 60″`, `1″ = 1000 mas`.
 #[derive(Copy, Clone, Debug, Default)]
-pub(crate) struct AngleLens;
+pub struct AngleLens;
 
 impl AngleLens {
     const MAS_PER_DEG: u64 = 3_600_000;
@@ -111,8 +111,8 @@ impl Lens for AngleLens {
 /// digit was absent. The `purist` flag restores that behaviour; otherwise
 /// leading zeros render as `00` for column alignment.
 #[derive(Copy, Clone, Debug, Default)]
-pub(crate) struct TabletLens {
-    pub(crate) purist: bool,
+pub struct TabletLens {
+    pub purist: bool,
 }
 
 impl Lens for TabletLens {
@@ -157,13 +157,14 @@ impl Lens for TabletLens {
 /// environment — `NO_UNICODE=1`, `TERM=dumb`, or the CLI override —
 /// so the render path stays branch-predictable.
 #[derive(Copy, Clone, Debug, Default)]
-pub(crate) struct CuneiformLens {
-    pub(crate) fallback: bool,
+pub struct CuneiformLens {
+    pub fallback: bool,
 }
 
 impl CuneiformLens {
     /// Build a lens, detecting fallback from the environment.
-    pub(crate) fn auto() -> Self {
+    #[must_use]
+    pub fn auto() -> Self {
         Self {
             fallback: cuneiform::ascii_fallback_forced(),
         }
