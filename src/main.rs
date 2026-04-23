@@ -13,6 +13,7 @@ mod cli;
 mod color;
 mod convert;
 mod cuneiform;
+mod decode;
 mod dump;
 mod lens;
 mod persist;
@@ -22,16 +23,18 @@ mod tui;
 
 use anyhow::Result;
 use clap::Parser;
-use cli::{AnalyzeArgs, ColorChoice, Command, ViewArgs};
+use cli::{AnalyzeArgs, ColorChoice, Command, DecodeArgs, ViewArgs};
 use color::Palette;
 use lens::Lens;
-use std::io::{BufWriter, IsTerminal, stdout};
+use std::fs::File;
+use std::io::{BufReader, BufWriter, IsTerminal, stdout};
 
 fn main() -> Result<()> {
     let args = cli::Cli::parse();
     match &args.command {
         None => run_view(&args.view),
         Some(Command::Analyze(a)) => run_analyze(a),
+        Some(Command::Decode(d)) => run_decode(d),
     }
 }
 
@@ -84,6 +87,26 @@ fn run_analyze(args: &AnalyzeArgs) -> Result<()> {
     let stdout = stdout();
     let mut out = BufWriter::new(stdout.lock());
     match analyze::write_summary(&analysis, bytes.as_slice(), &mut out) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
+        Err(e) => Err(e.into()),
+    }
+}
+
+fn run_decode(args: &DecodeArgs) -> Result<()> {
+    // Decode reads text line-by-line; it doesn't benefit from mmap
+    // (dump files are tiny compared to their source), so we lean on
+    // `BufRead` straight from file or stdin.
+    let stdout = stdout();
+    let mut out = BufWriter::new(stdout.lock());
+    let result = if let Some(path) = args.file.as_deref() {
+        let file = File::open(path)?;
+        decode::decode_stream(BufReader::new(file), &mut out)
+    } else {
+        let stdin = std::io::stdin();
+        decode::decode_stream(stdin.lock(), &mut out)
+    };
+    match result {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
         Err(e) => Err(e.into()),

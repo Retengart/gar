@@ -124,6 +124,12 @@ pub(crate) enum Command {
     /// histogram, and detected ASCII regions — the kind of summary a
     /// reverse engineer would build by hand.
     Analyze(AnalyzeArgs),
+    /// Inverse of the default viewer: parse a base-60 dump back into
+    /// raw bytes on stdout.
+    ///
+    /// Useful for roundtripping — `base60 --color=never FILE | base60
+    /// decode` reproduces the original byte stream.
+    Decode(DecodeArgs),
 }
 
 /// Arguments accepted by the default (viewer) behaviour. Flattened into
@@ -198,4 +204,11 @@ pub(crate) struct AnalyzeArgs {
     /// Values below the analyser's internal minimum (`64`) are clamped.
     #[arg(long, default_value_t = crate::analyze::DEFAULT_WINDOW, value_name = "N")]
     pub(crate) window: usize,
+}
+
+/// Arguments for `base60 decode`.
+#[derive(Args, Debug)]
+pub(crate) struct DecodeArgs {
+    /// Dump file to decode. If omitted, text is read from standard input.
+    pub(crate) file: Option<PathBuf>,
 }
