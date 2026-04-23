@@ -7,6 +7,7 @@
 //! * [`styled_line`] — returns a ratatui [`Line`] with per-token [`Span`]s
 //!   for the interactive viewer.
 
+use crate::chunk::{CHUNK, be_u64, pad_chunk};
 use crate::color::{
     self, Palette, delim_style, digit_style, dot_style, lens_style, offset_style, printable_style,
     sep_style,
@@ -17,27 +18,11 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use std::io::{self, BufWriter, Write};
 
-/// Number of bytes consumed per output line.
-///
-/// One line ≡ one big-endian [`u64`] ≡ one base-60 number of up to
-/// [`base60_core::convert::DIGITS`] digits.
-pub(crate) const CHUNK: usize = 8;
-
 /// Width of the zero-padded hex offset column.
 const OFFSET_WIDTH: usize = 8;
 
 /// ASCII representation of a non-printable byte.
 const DOT: u8 = b'.';
-
-/// Parse `bytes` (length `1..=CHUNK`, right-padded with zeros) as a
-/// big-endian [`u64`].
-#[inline]
-fn be_u64(bytes: &[u8]) -> u64 {
-    debug_assert!(!bytes.is_empty() && bytes.len() <= CHUNK);
-    let mut padded = [0_u8; CHUNK];
-    padded[..bytes.len()].copy_from_slice(bytes);
-    u64::from_be_bytes(padded)
-}
 
 /// Write a single dump line to `w`, terminated by a newline.
 ///
@@ -61,7 +46,7 @@ pub(crate) fn write_line<W: Write>(
     lens: Option<&dyn Lens>,
 ) -> io::Result<()> {
     debug_assert!(bytes.len() <= CHUNK);
-    let chunk_be = be_u64(bytes);
+    let chunk_be = be_u64(pad_chunk(bytes));
     let digits = u64_to_base60(chunk_be);
 
     // Offset column.
@@ -159,7 +144,7 @@ pub(crate) fn styled_line(
     cursor_in_line: Option<usize>,
 ) -> Line<'static> {
     debug_assert!(bytes.len() <= CHUNK);
-    let chunk_be = be_u64(bytes);
+    let chunk_be = be_u64(pad_chunk(bytes));
     let digits = u64_to_base60(chunk_be);
 
     // 1 offset + 1 gap + (DIGITS digit spans + DIGITS-1 separator spans)

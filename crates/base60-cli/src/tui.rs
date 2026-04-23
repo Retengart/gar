@@ -1,8 +1,9 @@
 //! Interactive terminal viewer (optional `--interactive` flag).
 
 use crate::analyze::{self, Analysis, DEFAULT_WINDOW, RegionKind};
+use crate::chunk::CHUNK;
 use crate::cli::{LensMode, TimeScale, build_lens};
-use crate::dump::{CHUNK, border_style, status_style, styled_line, title_style};
+use crate::dump::{border_style, status_style, styled_line, title_style};
 use crate::persist::{self, PersistedState};
 use crate::search::{self, Pattern};
 use anyhow::Result;
