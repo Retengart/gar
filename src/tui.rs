@@ -11,9 +11,9 @@ use ratatui::layout::{Constraint, Layout};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
+use std::collections::HashMap;
 
-const TITLE: &str =
-    " 𒁹 base60 — hjkl: cursor  L: lens  /: search  n/N: match  g/G: top/bot  q: quit 𒌋 ";
+const TITLE: &str = " 𒁹 base60 — hjkl  L:lens  /:search  n/N  m/' :mark  g/G  q:quit 𒌋 ";
 
 /// Modal state of the viewer. `Normal` is the cursor-driven default; the
 /// other variants trap almost every keypress so the user can compose an
@@ -22,6 +22,12 @@ enum Mode {
     Normal,
     /// User is typing a search query into the status bar.
     SearchInput(String),
+    /// `m` was pressed; the next printable ASCII letter names the slot to
+    /// save the cursor byte into.
+    BookmarkSet,
+    /// `'` was pressed; the next printable ASCII letter names the slot
+    /// whose offset replaces the cursor.
+    BookmarkJump,
 }
 
 /// Run the interactive viewer over `data`, offsetting every displayed row
@@ -95,6 +101,9 @@ struct ViewState {
     /// Last known status message — set after a search confirms or errors,
     /// shown in the status bar for one render then cleared.
     status_message: Option<String>,
+    /// Vim-style bookmarks keyed by letter (`a-z`). Values are byte
+    /// offsets inside the loaded slice.
+    bookmarks: HashMap<char, usize>,
 }
 
 impl ViewState {
@@ -114,6 +123,7 @@ impl ViewState {
             matches: Vec::new(),
             match_idx: usize::MAX,
             status_message: None,
+            bookmarks: HashMap::new(),
         }
     }
 
@@ -194,6 +204,18 @@ impl ViewState {
                 Span::raw(" "),
             ]);
         }
+        if matches!(self.mode, Mode::BookmarkSet) {
+            return Line::from(vec![
+                Span::styled(" 𒑭 set bookmark (a-z): ", label),
+                Span::raw(" "),
+            ]);
+        }
+        if matches!(self.mode, Mode::BookmarkJump) {
+            return Line::from(vec![
+                Span::styled(" 𒑭 jump bookmark (a-z): ", label),
+                Span::raw(" "),
+            ]);
+        }
         if let Some(msg) = &self.status_message {
             return Line::from(vec![
                 Span::styled(" ", label),
@@ -251,9 +273,13 @@ impl ViewState {
         self.status_message = None;
 
         // Modal inputs are handled first so accelerators like `q` don't
-        // quit the TUI while the user is typing a search query.
+        // quit the TUI while the user is typing a search query or
+        // naming a bookmark slot.
         if let Mode::SearchInput(_) = &self.mode {
             return self.handle_search_input_key(code, data);
+        }
+        if matches!(self.mode, Mode::BookmarkSet | Mode::BookmarkJump) {
+            return self.handle_bookmark_key(code);
         }
 
         let half = (self.view_rows / 2).max(1);
@@ -289,7 +315,40 @@ impl ViewState {
             KeyCode::Char('/') => self.mode = Mode::SearchInput(String::new()),
             KeyCode::Char('n') => self.jump_to_next_match(),
             KeyCode::Char('N') => self.jump_to_prev_match(),
+            // Bookmarks: `m` + letter stores the cursor; `'` + letter
+            // jumps to the saved offset. Gaps in the slot namespace
+            // (`a-z`) are sentinel — they don't bind anything else.
+            KeyCode::Char('m') => self.mode = Mode::BookmarkSet,
+            KeyCode::Char('\'') => self.mode = Mode::BookmarkJump,
             _ => {}
+        }
+        std::ops::ControlFlow::Continue(())
+    }
+
+    fn handle_bookmark_key(&mut self, code: KeyCode) -> std::ops::ControlFlow<()> {
+        let setting = matches!(self.mode, Mode::BookmarkSet);
+        self.mode = Mode::Normal;
+        let KeyCode::Char(c) = code else {
+            // Esc, enter, arrow keys — anything non-letter just cancels.
+            return std::ops::ControlFlow::Continue(());
+        };
+        if !c.is_ascii_alphabetic() {
+            self.status_message = Some(format!("bookmarks use a-z, got {c:?}"));
+            return std::ops::ControlFlow::Continue(());
+        }
+        let slot = c.to_ascii_lowercase();
+        if setting {
+            let Some(byte) = self.cursor else {
+                self.status_message = Some("empty input — nothing to mark".to_owned());
+                return std::ops::ControlFlow::Continue(());
+            };
+            self.bookmarks.insert(slot, byte);
+            self.status_message = Some(format!("marked '{slot}' = 0x{byte:08x}"));
+        } else if let Some(&byte) = self.bookmarks.get(&slot) {
+            self.cursor = Some(byte);
+            self.status_message = Some(format!("jumped '{slot}' = 0x{byte:08x}"));
+        } else {
+            self.status_message = Some(format!("bookmark '{slot}' not set"));
         }
         std::ops::ControlFlow::Continue(())
     }
@@ -764,5 +823,79 @@ mod tests {
             .collect();
         assert!(joined.contains("search:"));
         assert!(joined.contains("ab"));
+    }
+
+    #[test]
+    fn m_enters_bookmark_set_mode() {
+        let mut s = state(80);
+        let _ = s.handle_key(KeyCode::Char('m'), KeyModifiers::NONE, b"");
+        assert!(matches!(s.mode, Mode::BookmarkSet));
+    }
+
+    #[test]
+    fn apostrophe_enters_bookmark_jump_mode() {
+        let mut s = state(80);
+        let _ = s.handle_key(KeyCode::Char('\''), KeyModifiers::NONE, b"");
+        assert!(matches!(s.mode, Mode::BookmarkJump));
+    }
+
+    #[test]
+    fn bookmark_set_then_jump_restores_cursor() {
+        let mut s = state(80);
+        s.cursor = Some(42);
+        let _ = s.handle_key(KeyCode::Char('m'), KeyModifiers::NONE, b"");
+        let _ = s.handle_key(KeyCode::Char('a'), KeyModifiers::NONE, b"");
+        assert_eq!(s.bookmarks.get(&'a'), Some(&42));
+        // Move cursor away.
+        s.cursor = Some(10);
+        // Now jump back.
+        let _ = s.handle_key(KeyCode::Char('\''), KeyModifiers::NONE, b"");
+        let _ = s.handle_key(KeyCode::Char('a'), KeyModifiers::NONE, b"");
+        assert_eq!(s.cursor, Some(42));
+        assert!(matches!(s.mode, Mode::Normal));
+    }
+
+    #[test]
+    fn bookmark_set_slot_is_case_insensitive() {
+        let mut s = state(80);
+        s.cursor = Some(7);
+        let _ = s.handle_key(KeyCode::Char('m'), KeyModifiers::NONE, b"");
+        let _ = s.handle_key(KeyCode::Char('Z'), KeyModifiers::NONE, b"");
+        assert_eq!(s.bookmarks.get(&'z'), Some(&7));
+        assert!(!s.bookmarks.contains_key(&'Z'));
+    }
+
+    #[test]
+    fn bookmark_jump_to_unset_slot_reports_message() {
+        let mut s = state(80);
+        let _ = s.handle_key(KeyCode::Char('\''), KeyModifiers::NONE, b"");
+        let _ = s.handle_key(KeyCode::Char('x'), KeyModifiers::NONE, b"");
+        assert_eq!(s.cursor, Some(0)); // unchanged
+        let msg = s.status_message.as_deref().unwrap_or("");
+        assert!(msg.contains("'x'"), "got {msg:?}");
+    }
+
+    #[test]
+    fn bookmark_set_with_digit_is_rejected() {
+        let mut s = state(80);
+        let _ = s.handle_key(KeyCode::Char('m'), KeyModifiers::NONE, b"");
+        let _ = s.handle_key(KeyCode::Char('5'), KeyModifiers::NONE, b"");
+        assert!(s.bookmarks.is_empty());
+        assert!(
+            s.status_message
+                .as_deref()
+                .unwrap()
+                .contains("bookmarks use a-z")
+        );
+    }
+
+    #[test]
+    fn bookmark_set_esc_cancels_without_changing_state() {
+        let mut s = state(80);
+        s.cursor = Some(17);
+        let _ = s.handle_key(KeyCode::Char('m'), KeyModifiers::NONE, b"");
+        let _ = s.handle_key(KeyCode::Esc, KeyModifiers::NONE, b"");
+        assert!(s.bookmarks.is_empty());
+        assert!(matches!(s.mode, Mode::Normal));
     }
 }
