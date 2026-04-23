@@ -1,20 +1,25 @@
 # Sumerian Base-60 Viewer — Roadmap
 
 **Дата:** 2026-04-23
-**Статус:** Approved (in progress)
+**Статус:** Complete — all seven phases shipped.
 **Scope:** 7 последовательных фаз. Порядок оптимизирован на финальное качество.
 
 ## Progress
 
 | # | Phase | Status |
 |---|-------|--------|
-| 1 | CI | ✓ shipped |
-| 2 | Lens | ✓ shipped |
-| 3 | Analyze | ✓ shipped (diff-mode deferred, see Phase 3 updates) |
-| 4 | Navigator | ◐ in progress — cursor + lens toggle + cuneiform offset shipped; bookmarks/search/semantic-jumps/persistence remain |
-| 5 | Decode + format | — |
-| 6 | Workspace split | — |
-| 7 | Release engineering | — |
+| 1 | CI | ✓ shipped (`c971fda`) |
+| 2 | Lens | ✓ shipped (`b96fc97`) |
+| 3 | Analyze | ✓ shipped (`69de2e7`) — diff-mode deferred to a follow-up |
+| 4 | Navigator | ✓ shipped — cursor (`2e71004`), lens toggle + cuneiform offset (`6e6a27d`), search (`46f6f9d`), bookmarks (`5d8e345`), semantic jumps (`e53be6a`), persistence (`03905dd`) |
+| 5 | Decode + format | ✓ shipped — decode (`dc1efc4`), format (`fc03d65`) |
+| 6 | Workspace split | ✓ shipped (`3578f75`) |
+| 7 | Release engineering | ✓ shipped (`a2605fa`) — completions + README. cargo-dist / man-page deferred to post-0.1 |
+
+Verification at plan close: 164 tests pass across the workspace;
+clippy pedantic+nursery+cargo clean; fmt clean; rustdoc `-D warnings`
+clean; end-to-end roundtrip `/bin/ls → dump → decode → cmp` silent
+on a 128-byte prefix.
 
 ## Overview
 
