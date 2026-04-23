@@ -15,6 +15,7 @@ mod convert;
 mod cuneiform;
 mod dump;
 mod lens;
+mod persist;
 mod reader;
 mod search;
 mod tui;
@@ -39,13 +40,16 @@ fn run_view(view: &ViewArgs) -> Result<()> {
 
     if view.interactive {
         // The TUI owns the lens so the `L` key can cycle variants without
-        // the main process having to rebuild state between frames.
+        // the main process having to rebuild state between frames. The
+        // file path (if any) is plumbed through so the viewer can
+        // persist per-file cursor/scroll/bookmarks across runs.
         tui::run(
             bytes.as_slice(),
             view.skip,
             view.lens,
             view.time_scale,
             view.purist,
+            view.file.as_deref(),
         )?;
     } else {
         let lens = cli::build_lens(view.lens, view.time_scale, view.purist);

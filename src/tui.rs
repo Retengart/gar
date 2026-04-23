@@ -5,6 +5,7 @@ use crate::cli::{LensMode, TimeScale, build_lens};
 use crate::cuneiform;
 use crate::dump::{CHUNK, border_style, status_style, styled_line, title_style};
 use crate::lens::Lens;
+use crate::persist::{self, PersistedState};
 use crate::search::{self, Pattern};
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
@@ -13,6 +14,7 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 const TITLE: &str = " 𒁹 base60 — hjkl  L:lens  /:find  m/':mark  ]/[ pze:jump  q:quit 𒌋 ";
 
@@ -53,8 +55,18 @@ pub(crate) fn run(
     initial_mode: LensMode,
     scale: TimeScale,
     purist: bool,
+    input_file: Option<&Path>,
 ) -> Result<()> {
     let mut state = ViewState::new(data, initial_mode, scale, purist);
+
+    // Per-file persistence: restore on entry, persist on clean exit.
+    // Stdin input has no persistent identity, so we skip entirely.
+    let persist_path: Option<PathBuf> = input_file.map(Path::to_path_buf);
+    if let Some(path) = &persist_path
+        && let Some(saved) = persist::load(path)
+    {
+        state.apply_persisted(saved);
+    }
 
     ratatui::run(|terminal| -> Result<()> {
         loop {
@@ -67,6 +79,9 @@ pub(crate) fn run(
                 continue;
             }
             if state.handle_key(key.code, key.modifiers, data).is_break() {
+                if let Some(path) = &persist_path {
+                    persist::save(path, &state.snapshot());
+                }
                 break Ok(());
             }
         }
@@ -551,6 +566,36 @@ impl ViewState {
         if let Some(c) = self.cursor {
             let last = self.data_len.saturating_sub(1);
             self.cursor = Some(byte_min(c / CHUNK * CHUNK + CHUNK - 1, last));
+        }
+    }
+
+    /// Apply a previously-persisted state on top of the defaults set by
+    /// [`ViewState::new`]. Out-of-range cursor/scroll are clamped against
+    /// the current slice (e.g. if the file shrank between runs).
+    fn apply_persisted(&mut self, saved: PersistedState) {
+        let last = self.data_len.saturating_sub(1);
+        let max_scroll = self.total_lines.saturating_sub(1);
+        self.scroll = byte_min(saved.scroll, max_scroll);
+        self.cursor = saved.cursor.map(|c| byte_min(c, last));
+        self.lens_mode = saved.lens_mode;
+        self.lens = build_lens(saved.lens_mode, self.scale, self.purist);
+        self.bookmarks = saved
+            .bookmarks
+            .into_iter()
+            .filter(|(_, byte)| *byte < self.data_len)
+            .collect();
+    }
+
+    /// Snapshot the subset of state that survives across runs.
+    fn snapshot(&self) -> PersistedState {
+        let mut marks: Vec<(char, usize)> = self.bookmarks.iter().map(|(&c, &b)| (c, b)).collect();
+        // Deterministic order on disk so `diff`-ing state files is useful.
+        marks.sort_unstable_by_key(|&(c, _)| c);
+        PersistedState {
+            scroll: self.scroll,
+            cursor: self.cursor,
+            lens_mode: self.lens_mode,
+            bookmarks: marks,
         }
     }
 }
@@ -1077,5 +1122,59 @@ mod tests {
             .collect();
         assert!(joined.contains("jump next"));
         assert!(joined.contains("p/z/e"));
+    }
+
+    #[test]
+    fn apply_persisted_restores_scroll_cursor_lens_and_bookmarks() {
+        let mut s = state(8 * 100);
+        let saved = PersistedState {
+            scroll: 7,
+            cursor: Some(42),
+            lens_mode: LensMode::Cuneiform,
+            bookmarks: vec![('a', 10), ('z', 500)],
+        };
+        s.apply_persisted(saved);
+        assert_eq!(s.scroll, 7);
+        assert_eq!(s.cursor, Some(42));
+        assert_eq!(s.lens_mode, LensMode::Cuneiform);
+        assert!(s.lens.is_some());
+        assert_eq!(s.bookmarks.get(&'a'), Some(&10));
+        assert_eq!(s.bookmarks.get(&'z'), Some(&500));
+    }
+
+    #[test]
+    fn apply_persisted_clamps_out_of_range_offsets() {
+        // File shrank between runs — saved offsets must be reined in so
+        // the TUI doesn't land the cursor past the end.
+        let mut s = state(16);
+        let saved = PersistedState {
+            scroll: 999,
+            cursor: Some(999),
+            lens_mode: LensMode::None,
+            bookmarks: vec![('a', 5), ('b', 999)],
+        };
+        s.apply_persisted(saved);
+        assert_eq!(s.cursor, Some(15));
+        assert_eq!(s.scroll, 1);
+        // Out-of-range bookmark is dropped silently.
+        assert_eq!(s.bookmarks.get(&'a'), Some(&5));
+        assert!(!s.bookmarks.contains_key(&'b'));
+    }
+
+    #[test]
+    fn snapshot_captures_cursor_scroll_and_bookmarks() {
+        let mut s = state(80);
+        s.scroll = 3;
+        s.cursor = Some(25);
+        s.lens_mode = LensMode::Tablet;
+        s.bookmarks.insert('m', 42);
+        s.bookmarks.insert('a', 10);
+
+        let snap = s.snapshot();
+        assert_eq!(snap.scroll, 3);
+        assert_eq!(snap.cursor, Some(25));
+        assert_eq!(snap.lens_mode, LensMode::Tablet);
+        // Sorted for diffability.
+        assert_eq!(snap.bookmarks, vec![('a', 10), ('m', 42)]);
     }
 }
