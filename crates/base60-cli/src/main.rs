@@ -9,6 +9,7 @@
 //! Entry point for the `base60` binary viewer.
 
 mod analyze;
+mod chunk;
 mod cli;
 mod color;
 mod decode;

@@ -14,21 +14,10 @@
 //! it without a companion library. HTML output mirrors the terminal's
 //! Sumerian heat-map palette via inline CSS classes.
 
-use crate::dump::CHUNK;
+use crate::chunk::{CHUNK, be_u64, pad_chunk};
 use base60_core::convert::u64_to_base60;
 use base60_core::lens::Lens;
 use std::io::{self, BufWriter, Write};
-
-/// Parse `bytes` (right-padded with zeros to 8) as big-endian `u64`.
-///
-/// Duplicated from `dump::be_u64` because exposing it would blur the
-/// line between private renderer internals and a public conversion.
-fn be_u64(bytes: &[u8]) -> u64 {
-    debug_assert!(!bytes.is_empty() && bytes.len() <= CHUNK);
-    let mut padded = [0_u8; CHUNK];
-    padded[..bytes.len()].copy_from_slice(bytes);
-    u64::from_be_bytes(padded)
-}
 
 /// Emit newline-delimited JSON (ndjson): one object per dump line.
 ///
@@ -50,7 +39,7 @@ pub(crate) fn emit_json<W: Write>(
     let mut out = BufWriter::new(w);
     for (idx, chunk) in data.chunks(CHUNK).enumerate() {
         let offset = base_offset.saturating_add((idx * CHUNK) as u64);
-        let chunk_be = be_u64(chunk);
+        let chunk_be = be_u64(pad_chunk(chunk));
         let digits = u64_to_base60(chunk_be);
 
         out.write_all(b"{\"offset\":")?;
@@ -102,7 +91,7 @@ pub(crate) fn emit_html<W: Write>(
 
     for (idx, chunk) in data.chunks(CHUNK).enumerate() {
         let offset = base_offset.saturating_add((idx * CHUNK) as u64);
-        let chunk_be = be_u64(chunk);
+        let chunk_be = be_u64(pad_chunk(chunk));
         let digits = u64_to_base60(chunk_be);
 
         write!(out, "<span class=\"offset\">{offset:08x}</span>  ")?;
