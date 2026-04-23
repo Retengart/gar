@@ -16,6 +16,7 @@ mod cuneiform;
 mod dump;
 mod lens;
 mod reader;
+mod search;
 mod tui;
 
 use anyhow::Result;
