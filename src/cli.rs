@@ -1,6 +1,6 @@
 //! Command-line interface definition.
 
-use clap::{Parser, ValueEnum};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
 /// When to colorize output, mirroring the `--color` convention of
@@ -50,6 +50,32 @@ pub(crate) enum TimeScale {
 #[derive(Parser, Debug)]
 #[command(name = "base60", version, about, long_about = None)]
 pub(crate) struct Cli {
+    /// Optional subcommand. Omit to run the default `view` behaviour
+    /// with the top-level flags below.
+    #[command(subcommand)]
+    pub(crate) command: Option<Command>,
+
+    /// Flags for the default `view` behaviour.
+    #[command(flatten)]
+    pub(crate) view: ViewArgs,
+}
+
+/// Top-level subcommands. Each one runs an independent workflow; the
+/// top-level flags on [`Cli`] apply only when no subcommand is given.
+#[derive(Subcommand, Debug)]
+pub(crate) enum Command {
+    /// Stream statistical analysis of a file to stdout.
+    ///
+    /// Complements the default viewer with Shannon entropy, byte
+    /// histogram, and detected ASCII regions — the kind of summary a
+    /// reverse engineer would build by hand.
+    Analyze(AnalyzeArgs),
+}
+
+/// Arguments accepted by the default (viewer) behaviour. Flattened into
+/// [`Cli`] so `base60 FILE` keeps its current shape.
+#[derive(Args, Debug)]
+pub(crate) struct ViewArgs {
     /// Input file. If omitted, bytes are read from standard input.
     pub(crate) file: Option<PathBuf>,
 
@@ -98,4 +124,24 @@ pub(crate) struct Cli {
     /// stood; this flag restores that behaviour.
     #[arg(long)]
     pub(crate) purist: bool,
+}
+
+/// Arguments for `base60 analyze`.
+#[derive(Args, Debug)]
+pub(crate) struct AnalyzeArgs {
+    /// Input file. If omitted, bytes are read from standard input.
+    pub(crate) file: Option<PathBuf>,
+
+    /// Skip this many bytes from the beginning of the input.
+    #[arg(short = 's', long, default_value_t = 0, value_name = "N")]
+    pub(crate) skip: u64,
+
+    /// Read at most this many bytes.
+    #[arg(short = 'n', long, value_name = "N")]
+    pub(crate) length: Option<u64>,
+
+    /// Window size for per-window Shannon entropy, in bytes.
+    /// Values below the analyser's internal minimum (`64`) are clamped.
+    #[arg(long, default_value_t = crate::analyze::DEFAULT_WINDOW, value_name = "N")]
+    pub(crate) window: usize,
 }

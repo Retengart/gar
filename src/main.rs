@@ -8,6 +8,7 @@
 
 //! Entry point for the `base60` binary viewer.
 
+mod analyze;
 mod cli;
 mod color;
 mod convert;
@@ -19,27 +20,34 @@ mod tui;
 
 use anyhow::Result;
 use clap::Parser;
-use cli::{ColorChoice, LensMode, TimeScale as CliTimeScale};
+use cli::{AnalyzeArgs, ColorChoice, Command, LensMode, TimeScale as CliTimeScale, ViewArgs};
 use color::Palette;
 use lens::{AngleLens, CuneiformLens, Lens, TabletLens, TimeLens, TimeScale as LensTimeScale};
 use std::io::{BufWriter, IsTerminal, stdout};
 
 fn main() -> Result<()> {
     let args = cli::Cli::parse();
-    let bytes = reader::load(args.file.as_deref(), args.skip, args.length)?;
-    let lens = pick_lens(args.lens, args.time_scale, args.purist);
+    match &args.command {
+        None => run_view(&args.view),
+        Some(Command::Analyze(a)) => run_analyze(a),
+    }
+}
+
+fn run_view(view: &ViewArgs) -> Result<()> {
+    let bytes = reader::load(view.file.as_deref(), view.skip, view.length)?;
+    let lens = pick_lens(view.lens, view.time_scale, view.purist);
     let lens_ref: Option<&dyn Lens> = lens.as_deref();
 
-    if args.interactive {
-        tui::run(bytes.as_slice(), args.skip, lens_ref)?;
+    if view.interactive {
+        tui::run(bytes.as_slice(), view.skip, lens_ref)?;
     } else {
         let stdout = stdout();
-        let palette = pick_palette(args.color, stdout.is_terminal());
+        let palette = pick_palette(view.color, stdout.is_terminal());
         // `dump_all` wraps in its own BufWriter; wrap again only to coalesce
         // writes before the lock is released.
         let result = dump::dump_all(
             bytes.as_slice(),
-            args.skip,
+            view.skip,
             BufWriter::new(stdout.lock()),
             palette,
             lens_ref,
@@ -55,6 +63,18 @@ fn main() -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn run_analyze(args: &AnalyzeArgs) -> Result<()> {
+    let bytes = reader::load(args.file.as_deref(), args.skip, args.length)?;
+    let analysis = analyze::analyze(bytes.as_slice(), args.window);
+    let stdout = stdout();
+    let mut out = BufWriter::new(stdout.lock());
+    match analyze::write_summary(&analysis, bytes.as_slice(), &mut out) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
+        Err(e) => Err(e.into()),
+    }
 }
 
 /// Resolve the user's [`ColorChoice`] against the current environment.

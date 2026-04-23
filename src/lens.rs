@@ -325,5 +325,4 @@ mod tests {
         assert!(l.fallback);
         unsafe { std::env::remove_var("NO_UNICODE") };
     }
-
 }

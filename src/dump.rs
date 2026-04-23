@@ -150,11 +150,7 @@ pub(crate) fn dump_all<W: Write>(
 /// Unlike [`write_line`], this path targets a `Vec<Span>` so each token
 /// carries its own [`Style`], letting the terminal do the rendering with
 /// true-color fidelity where supported.
-pub(crate) fn styled_line(
-    offset: u64,
-    bytes: &[u8],
-    lens: Option<&dyn Lens>,
-) -> Line<'static> {
+pub(crate) fn styled_line(offset: u64, bytes: &[u8], lens: Option<&dyn Lens>) -> Line<'static> {
     debug_assert!(bytes.len() <= CHUNK);
     let chunk_be = be_u64(bytes);
     let digits = u64_to_base60(chunk_be);
