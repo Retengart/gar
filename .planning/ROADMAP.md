@@ -26,7 +26,9 @@
   2. `crates/base60-core/Cargo.toml` `[dependencies]` section remains empty — no new workspace dep leaked into the zero-dep library.
   3. A single `const ALL: &[LensMode]` (or equivalent hand-rolled table) in `cli.rs` drives every lens dispatch site; `build_lens` / `cycle` / `label` / `persist::parse_lens` all read from it, verified by a compile-time exhaustiveness test that iterates the table and panics on missing variants.
   4. Adding a hypothetical fifth `LensMode` variant compile-errors at exactly one site (the table); `cargo test --workspace --all-targets --locked` stays green.
-**Plans**: TBD
+**Plans**: 2 plans
+- [ ] 01-dedupe-be-u64-PLAN.md — de-duplicate `be_u64` into CLI-local `chunk.rs`; `dump.rs`/`format.rs` import from it [REF-01]
+- [ ] 02-lens-mode-dispatch-table-PLAN.md — add `LensMode::ALL` + exhaustiveness tests; promote `persist::parse_lens` to `pub(crate)` [REF-02]
 **Parallel-safe with**: none (ships before all other phases).
 
 ### Phase 2: Env-Test Serialisation
