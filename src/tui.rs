@@ -1,5 +1,6 @@
 //! Interactive terminal viewer (optional `--interactive` flag).
 
+use crate::analyze::{self, Analysis, DEFAULT_WINDOW, RegionKind};
 use crate::cli::{LensMode, TimeScale, build_lens};
 use crate::cuneiform;
 use crate::dump::{CHUNK, border_style, status_style, styled_line, title_style};
@@ -13,7 +14,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 use std::collections::HashMap;
 
-const TITLE: &str = " 𒁹 base60 — hjkl  L:lens  /:search  n/N  m/' :mark  g/G  q:quit 𒌋 ";
+const TITLE: &str = " 𒁹 base60 — hjkl  L:lens  /:find  m/':mark  ]/[ pze:jump  q:quit 𒌋 ";
 
 /// Modal state of the viewer. `Normal` is the cursor-driven default; the
 /// other variants trap almost every keypress so the user can compose an
@@ -28,6 +29,11 @@ enum Mode {
     /// `'` was pressed; the next printable ASCII letter names the slot
     /// whose offset replaces the cursor.
     BookmarkJump,
+    /// `]` or `[` was pressed; the next letter picks a region kind.
+    /// `forward` mirrors the leader: `]` → true, `[` → false.
+    SemanticJump {
+        forward: bool,
+    },
 }
 
 /// Run the interactive viewer over `data`, offsetting every displayed row
@@ -48,7 +54,7 @@ pub(crate) fn run(
     scale: TimeScale,
     purist: bool,
 ) -> Result<()> {
-    let mut state = ViewState::new(data.len(), initial_mode, scale, purist);
+    let mut state = ViewState::new(data, initial_mode, scale, purist);
 
     ratatui::run(|terminal| -> Result<()> {
         loop {
@@ -104,16 +110,21 @@ struct ViewState {
     /// Vim-style bookmarks keyed by letter (`a-z`). Values are byte
     /// offsets inside the loaded slice.
     bookmarks: HashMap<char, usize>,
+    /// Precomputed statistical analysis of the loaded slice. Used by
+    /// semantic jumps (`]p`, `]z`, `]e`) to locate the next/prev
+    /// ASCII run, zero fill, or entropy spike without rescanning on
+    /// every keystroke.
+    analysis: Analysis,
 }
 
 impl ViewState {
-    fn new(data_len: usize, initial_mode: LensMode, scale: TimeScale, purist: bool) -> Self {
-        let total_lines = data_len.div_ceil(CHUNK);
+    fn new(data: &[u8], initial_mode: LensMode, scale: TimeScale, purist: bool) -> Self {
+        let total_lines = data.len().div_ceil(CHUNK);
         Self {
-            data_len,
+            data_len: data.len(),
             total_lines,
             scroll: 0,
-            cursor: if data_len == 0 { None } else { Some(0) },
+            cursor: if data.is_empty() { None } else { Some(0) },
             view_rows: 1,
             lens_mode: initial_mode,
             lens: build_lens(initial_mode, scale, purist),
@@ -124,6 +135,9 @@ impl ViewState {
             match_idx: usize::MAX,
             status_message: None,
             bookmarks: HashMap::new(),
+            // Eager: one pass at launch is cheaper than racing the
+            // viewport on every semantic-jump keystroke.
+            analysis: analyze::analyze(data, DEFAULT_WINDOW),
         }
     }
 
@@ -216,6 +230,13 @@ impl ViewState {
                 Span::raw(" "),
             ]);
         }
+        if let Mode::SemanticJump { forward } = self.mode {
+            let arrow = if forward { "next" } else { "prev" };
+            return Line::from(vec![
+                Span::styled(format!(" 𒑭 jump {arrow} (p/z/e): "), label),
+                Span::raw(" "),
+            ]);
+        }
         if let Some(msg) = &self.status_message {
             return Line::from(vec![
                 Span::styled(" ", label),
@@ -281,6 +302,9 @@ impl ViewState {
         if matches!(self.mode, Mode::BookmarkSet | Mode::BookmarkJump) {
             return self.handle_bookmark_key(code);
         }
+        if let Mode::SemanticJump { forward } = self.mode {
+            return self.handle_semantic_jump_key(code, forward);
+        }
 
         let half = (self.view_rows / 2).max(1);
         let page = self.view_rows.max(1);
@@ -320,9 +344,69 @@ impl ViewState {
             // (`a-z`) are sentinel — they don't bind anything else.
             KeyCode::Char('m') => self.mode = Mode::BookmarkSet,
             KeyCode::Char('\'') => self.mode = Mode::BookmarkJump,
+            // Semantic jumps: `]<letter>` forward, `[<letter>` backward.
+            // Letters: p = printable ASCII run, z = low-entropy window,
+            // e = high-entropy window. Uses the precomputed Analysis.
+            KeyCode::Char(']') => self.mode = Mode::SemanticJump { forward: true },
+            KeyCode::Char('[') => self.mode = Mode::SemanticJump { forward: false },
             _ => {}
         }
         std::ops::ControlFlow::Continue(())
+    }
+
+    fn handle_semantic_jump_key(
+        &mut self,
+        code: KeyCode,
+        forward: bool,
+    ) -> std::ops::ControlFlow<()> {
+        self.mode = Mode::Normal;
+        let KeyCode::Char(c) = code else {
+            return std::ops::ControlFlow::Continue(());
+        };
+        let kind = match c {
+            'p' => RegionKind::Ascii,
+            'z' => RegionKind::LowEntropy,
+            'e' => RegionKind::HighEntropy,
+            _ => {
+                self.status_message = Some(format!("unknown jump letter {c:?} (p/z/e)"));
+                return std::ops::ControlFlow::Continue(());
+            }
+        };
+        self.jump_to_region(kind, forward);
+        std::ops::ControlFlow::Continue(())
+    }
+
+    fn jump_to_region(&mut self, kind: RegionKind, forward: bool) {
+        let Some(here) = self.cursor else {
+            return;
+        };
+        let direction_label = if forward { "next" } else { "prev" };
+        let kind_label = region_label(kind);
+
+        let candidate = if forward {
+            self.analysis
+                .regions
+                .iter()
+                .find(|r| r.kind == kind && r.start > here)
+        } else {
+            // `rev()` walks regions right-to-left; we want the last region
+            // starting strictly before the cursor.
+            self.analysis
+                .regions
+                .iter()
+                .rev()
+                .find(|r| r.kind == kind && r.start < here)
+        };
+
+        if let Some(region) = candidate {
+            self.cursor = Some(region.start);
+            self.status_message = Some(format!(
+                "{direction_label} {kind_label} @ 0x{:08x}",
+                region.start
+            ));
+        } else {
+            self.status_message = Some(format!("no {direction_label} {kind_label}"));
+        }
     }
 
     fn handle_bookmark_key(&mut self, code: KeyCode) -> std::ops::ControlFlow<()> {
@@ -475,6 +559,14 @@ const fn byte_min(a: usize, b: usize) -> usize {
     if a < b { a } else { b }
 }
 
+const fn region_label(kind: RegionKind) -> &'static str {
+    match kind {
+        RegionKind::Ascii => "printable",
+        RegionKind::LowEntropy => "zero-run",
+        RegionKind::HighEntropy => "entropy-spike",
+    }
+}
+
 /// Render `offset` (a byte address) as Sumero-Babylonian cuneiform,
 /// stripping leading zero-placeholders so the display is compact.
 ///
@@ -501,7 +593,11 @@ mod tests {
     use super::*;
 
     fn state(data_len: usize) -> ViewState {
-        ViewState::new(data_len, LensMode::None, TimeScale::Gar, false)
+        // Analysis scans the slice we hand it; a buffer of zeros is a
+        // stable, cheap fixture for the geometry-only tests that don't
+        // care about actual byte contents.
+        let data = vec![0_u8; data_len];
+        ViewState::new(&data, LensMode::None, TimeScale::Gar, false)
     }
 
     #[test]
@@ -675,7 +771,8 @@ mod tests {
 
     #[test]
     fn status_line_shows_cuneiform_offset_when_cuneiform_lens_active() {
-        let mut s = ViewState::new(80, LensMode::Cuneiform, TimeScale::Gar, false);
+        let data = vec![0_u8; 80];
+        let mut s = ViewState::new(&data, LensMode::Cuneiform, TimeScale::Gar, false);
         s.cursor = Some(60); // offset encodes to "1:0" in base 60.
         let line = s.status_line(0, 10);
         let joined: String = line
@@ -897,5 +994,88 @@ mod tests {
         let _ = s.handle_key(KeyCode::Esc, KeyModifiers::NONE, b"");
         assert!(s.bookmarks.is_empty());
         assert!(matches!(s.mode, Mode::Normal));
+    }
+
+    #[test]
+    fn bracket_enters_semantic_jump_mode() {
+        let mut s = state(80);
+        let _ = s.handle_key(KeyCode::Char(']'), KeyModifiers::NONE, b"");
+        assert!(matches!(s.mode, Mode::SemanticJump { forward: true }));
+        let _ = s.handle_key(KeyCode::Esc, KeyModifiers::NONE, b"");
+        let _ = s.handle_key(KeyCode::Char('['), KeyModifiers::NONE, b"");
+        assert!(matches!(s.mode, Mode::SemanticJump { forward: false }));
+    }
+
+    #[test]
+    fn semantic_jump_p_lands_on_next_ascii_region() {
+        // Construct data with a known ASCII run at offset 10.
+        let mut data = vec![0_u8; 10];
+        data.extend_from_slice(b"Hello, world!"); // 10..23, len 13 ≥ 4 → Ascii region
+        data.extend_from_slice(&[0_u8; 10]);
+
+        let mut s = ViewState::new(&data, LensMode::None, TimeScale::Gar, false);
+        s.cursor = Some(0);
+
+        let _ = s.handle_key(KeyCode::Char(']'), KeyModifiers::NONE, &data);
+        let _ = s.handle_key(KeyCode::Char('p'), KeyModifiers::NONE, &data);
+
+        assert_eq!(s.cursor, Some(10));
+        assert!(matches!(s.mode, Mode::Normal));
+        let msg = s.status_message.as_deref().unwrap_or("");
+        assert!(msg.contains("printable"), "got {msg:?}");
+    }
+
+    #[test]
+    fn semantic_jump_p_backward_finds_previous_ascii_region() {
+        let mut data = vec![0_u8; 10];
+        data.extend_from_slice(b"early string"); // offset 10
+        data.extend_from_slice(&[0_u8; 10]);
+        data.extend_from_slice(b"late string"); // offset 32 (22 bytes in)
+        data.extend_from_slice(&[0_u8; 10]);
+
+        let mut s = ViewState::new(&data, LensMode::None, TimeScale::Gar, false);
+        s.cursor = Some(50);
+        let _ = s.handle_key(KeyCode::Char('['), KeyModifiers::NONE, &data);
+        let _ = s.handle_key(KeyCode::Char('p'), KeyModifiers::NONE, &data);
+        // Should have stepped back to the most recent ascii start before 50.
+        assert!(s.cursor.unwrap() < 50);
+    }
+
+    #[test]
+    fn semantic_jump_with_no_match_reports_message() {
+        let data = vec![0_u8; 10]; // no ASCII regions anywhere
+        let mut s = ViewState::new(&data, LensMode::None, TimeScale::Gar, false);
+        s.cursor = Some(0);
+
+        let _ = s.handle_key(KeyCode::Char(']'), KeyModifiers::NONE, &data);
+        let _ = s.handle_key(KeyCode::Char('p'), KeyModifiers::NONE, &data);
+        // Cursor unchanged.
+        assert_eq!(s.cursor, Some(0));
+        let msg = s.status_message.as_deref().unwrap_or("");
+        assert!(msg.contains("no next printable"), "got {msg:?}");
+    }
+
+    #[test]
+    fn semantic_jump_unknown_letter_reports_error() {
+        let mut s = state(80);
+        let _ = s.handle_key(KeyCode::Char(']'), KeyModifiers::NONE, b"");
+        let _ = s.handle_key(KeyCode::Char('x'), KeyModifiers::NONE, b"");
+        assert!(matches!(s.mode, Mode::Normal));
+        let msg = s.status_message.as_deref().unwrap_or("");
+        assert!(msg.contains("unknown jump letter"), "got {msg:?}");
+    }
+
+    #[test]
+    fn status_line_shows_semantic_jump_prompt() {
+        let mut s = state(80);
+        let _ = s.handle_key(KeyCode::Char(']'), KeyModifiers::NONE, b"");
+        let line = s.status_line(0, 10);
+        let joined: String = line
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect();
+        assert!(joined.contains("jump next"));
+        assert!(joined.contains("p/z/e"));
     }
 }
