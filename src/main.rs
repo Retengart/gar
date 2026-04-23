@@ -15,6 +15,7 @@ mod convert;
 mod cuneiform;
 mod decode;
 mod dump;
+mod format;
 mod lens;
 mod persist;
 mod reader;
@@ -23,7 +24,7 @@ mod tui;
 
 use anyhow::Result;
 use clap::Parser;
-use cli::{AnalyzeArgs, ColorChoice, Command, DecodeArgs, ViewArgs};
+use cli::{AnalyzeArgs, ColorChoice, Command, DecodeArgs, Format, ViewArgs};
 use color::Palette;
 use lens::Lens;
 use std::fs::File;
@@ -58,16 +59,39 @@ fn run_view(view: &ViewArgs) -> Result<()> {
         let lens = cli::build_lens(view.lens, view.time_scale, view.purist);
         let lens_ref: Option<&dyn Lens> = lens.as_deref();
         let stdout = stdout();
-        let palette = pick_palette(view.color, stdout.is_terminal());
-        // `dump_all` wraps in its own BufWriter; wrap again only to coalesce
-        // writes before the lock is released.
-        let result = dump::dump_all(
-            bytes.as_slice(),
-            view.skip,
-            BufWriter::new(stdout.lock()),
-            palette,
-            lens_ref,
-        );
+        let is_tty = stdout.is_terminal();
+        let result = match view.format {
+            // `dump_all` wraps its own BufWriter; we wrap again only to
+            // coalesce writes before the lock is released.
+            Format::Ansi => dump::dump_all(
+                bytes.as_slice(),
+                view.skip,
+                BufWriter::new(stdout.lock()),
+                pick_palette(view.color, is_tty),
+                lens_ref,
+            ),
+            // Plain == ANSI layout with the no-op palette, regardless of
+            // what `--color` says. Users who ask for plain mean it.
+            Format::Plain => dump::dump_all(
+                bytes.as_slice(),
+                view.skip,
+                BufWriter::new(stdout.lock()),
+                &color::PALETTE_NONE,
+                lens_ref,
+            ),
+            Format::Json => format::emit_json(
+                bytes.as_slice(),
+                view.skip,
+                BufWriter::new(stdout.lock()),
+                lens_ref,
+            ),
+            Format::Html => format::emit_html(
+                bytes.as_slice(),
+                view.skip,
+                BufWriter::new(stdout.lock()),
+                lens_ref,
+            ),
+        };
         match result {
             Ok(()) => {}
             // Downstream consumers like `head` close the pipe after reading

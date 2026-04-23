@@ -99,6 +99,23 @@ pub(crate) enum TimeScale {
     Ms,
 }
 
+/// Output format for the default viewer. `ansi` preserves the current
+/// behaviour; the other modes are machine- or browser-friendly.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, ValueEnum)]
+pub(crate) enum Format {
+    /// Colourised terminal output (honours `--color` for ANSI opt-out).
+    #[default]
+    Ansi,
+    /// Same layout as `ansi` but never emits escape sequences — ideal
+    /// for piping into `grep`, `awk`, or storing to disk.
+    Plain,
+    /// Newline-delimited JSON, one object per 8-byte chunk. Consumable
+    /// with `jq` without any companion library.
+    Json,
+    /// Self-contained HTML document with an inline CSS heat-map.
+    Html,
+}
+
 /// View binary data as base-60 (sexagesimal) digit pairs in the
 /// Sumero-Babylonian positional notation.
 #[derive(Parser, Debug)]
@@ -184,6 +201,16 @@ pub(crate) struct ViewArgs {
     /// stood; this flag restores that behaviour.
     #[arg(long)]
     pub(crate) purist: bool,
+
+    /// Output format: `ansi` (coloured TTY), `plain` (pipe-safe text),
+    /// `json` (ndjson), or `html` (self-contained report).
+    #[arg(
+        long,
+        value_enum,
+        default_value_t = Format::Ansi,
+        value_name = "MODE",
+    )]
+    pub(crate) format: Format,
 }
 
 /// Arguments for `base60 analyze`.
