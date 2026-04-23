@@ -124,9 +124,13 @@ on the binary.
 |----------|-----------|---------|
 | v2 is hardening-only — no new user-facing features | CONCERNS.md lists real risks (duplication, untested paths, unbounded stdin); v1 feature surface is already rich | — Pending |
 | Integration-test crate goes under `crates/base60-cli/tests/` | CLI-side roundtrip is the integration boundary; `base60-core` stays zero-dep and unit-tested | — Pending |
-| Fuzz targets gated by `cargo-fuzz`, not pulled into default workspace | `cargo-fuzz` pulls nightly tooling; keep it opt-in under `fuzz/` | — Pending |
+| Fuzz crate at repo-root `fuzz/` as excluded workspace member | Standard `cargo-fuzz` layout; nightly tooling and ASAN stay off the main-workspace MSRV floor | — Pending |
 | Streaming stdin path applies to non-TUI dump only | TUI genuinely needs random-access slice for bookmarks/search; preserve mmap path unchanged | — Pending |
-| `be_u64` moves to `base60-core::chunk` as `pub fn` | Library already exposes the inverse (`u64_to_base60`); single source of truth wins over internal-only dedup | — Pending |
+| `be_u64` moves to `crates/base60-cli/src/chunk.rs` (CLI-local, not core) | Protects `base60-core` public API surface from internal CLI concerns; single source of truth within CLI; core stays zero-dep without chunk-decoding responsibility | — Pending |
+| `LensMode` dispatch driven by hand-rolled `const ALL: &[LensMode]` table, not `strum` in core | `base60-core` zero-dep constraint beats compile-time convenience; four variants don't justify a proc-macro dep | — Pending |
+| `parse_run` / `Pattern` stay in `base60-cli` with `#[cfg(fuzzing)] pub` hatch for fuzz targets | Keeps public library API surface minimal; fuzz crate imports via cfg-gated visibility | — Pending |
+| Criterion benches are advisory, not CI-gating | Shared GitHub Actions runners have noise floor > typical signal; baselines stay local, numbers pasted in PR descriptions | — Pending |
+| Fuzz CI runs on a weekly `schedule:` workflow, Ubuntu + dated nightly only | `libFuzzer` is Linux-nightly-only; per-PR runs blow the time budget; weekly covers drift | — Pending |
 
 ## Evolution
 
