@@ -21,8 +21,9 @@ mod tui;
 
 use anyhow::Result;
 use base60_core::Lens;
+use clap::CommandFactory;
 use clap::Parser;
-use cli::{AnalyzeArgs, ColorChoice, Command, DecodeArgs, Format, ViewArgs};
+use cli::{AnalyzeArgs, ColorChoice, Command, CompletionsArgs, DecodeArgs, Format, ViewArgs};
 use color::Palette;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, IsTerminal, stdout};
@@ -33,6 +34,10 @@ fn main() -> Result<()> {
         None => run_view(&args.view),
         Some(Command::Analyze(a)) => run_analyze(a),
         Some(Command::Decode(d)) => run_decode(d),
+        Some(Command::Completions(c)) => {
+            run_completions(c);
+            Ok(())
+        }
     }
 }
 
@@ -132,6 +137,16 @@ fn run_decode(args: &DecodeArgs) -> Result<()> {
         Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
         Err(e) => Err(e.into()),
     }
+}
+
+fn run_completions(args: &CompletionsArgs) {
+    // `CommandFactory` rebuilds the full `clap::Command` tree for free
+    // so completions always match whatever flags the binary actually
+    // exposes — no drift between the CLI definition and the script.
+    let mut cmd = cli::Cli::command();
+    let bin_name = cmd.get_name().to_owned();
+    let stdout = stdout();
+    clap_complete::generate(args.shell, &mut cmd, bin_name, &mut stdout.lock());
 }
 
 /// Resolve the user's [`ColorChoice`] against the current environment.

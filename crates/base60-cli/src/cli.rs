@@ -4,6 +4,7 @@ use base60_core::lens::{
     AngleLens, CuneiformLens, Lens, TabletLens, TimeLens, TimeScale as LensTimeScale,
 };
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap_complete::Shell;
 use std::path::PathBuf;
 
 /// When to colorize output, mirroring the `--color` convention of
@@ -147,6 +148,11 @@ pub(crate) enum Command {
     /// Useful for roundtripping — `base60 --color=never FILE | base60
     /// decode` reproduces the original byte stream.
     Decode(DecodeArgs),
+    /// Emit shell completion script for the selected shell to stdout.
+    ///
+    /// Pipe the output into the shell's completion directory, e.g.
+    /// `base60 completions zsh > ~/.zfunc/_base60`.
+    Completions(CompletionsArgs),
 }
 
 /// Arguments accepted by the default (viewer) behaviour. Flattened into
@@ -238,4 +244,13 @@ pub(crate) struct AnalyzeArgs {
 pub(crate) struct DecodeArgs {
     /// Dump file to decode. If omitted, text is read from standard input.
     pub(crate) file: Option<PathBuf>,
+}
+
+/// Arguments for `base60 completions`.
+#[derive(Args, Debug)]
+pub(crate) struct CompletionsArgs {
+    /// Target shell. Supported values: `bash`, `zsh`, `fish`,
+    /// `elvish`, `powershell`.
+    #[arg(value_enum)]
+    pub(crate) shell: Shell,
 }
