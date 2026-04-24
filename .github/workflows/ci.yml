@@ -36,6 +36,9 @@ jobs:
           key: ${{ matrix.os }}-${{ matrix.rust }}
       - name: Unit + integration tests
         run: cargo test --workspace --all-targets --locked
+      - name: test-threads-8 (ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo test --workspace --all-targets --locked -- --test-threads=8
       - name: Doc tests
         run: cargo test --workspace --doc --locked
 
