@@ -41,8 +41,8 @@ impl LensMode {
     /// Every variant in cycle order. Tests iterate this slice to prove
     /// `cycle`, `label`, `build_lens`, and `persist::parse_lens` stay
     /// exhaustive whenever a new variant is added.
-    // Phase 3 (TEST-01) will iterate this in production code; suppress
-    // the dead-code lint in the interim.
+    // TODO(phase-3 TEST-01): iterate LensMode::ALL in production code
+    // (see 01-02-SUMMARY.md), then drop the dead_code allow below.
     #[allow(dead_code)]
     pub(crate) const ALL: &[Self] = &[
         Self::None,
