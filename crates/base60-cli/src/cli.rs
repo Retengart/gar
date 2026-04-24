@@ -148,8 +148,14 @@ impl Format {
 ///
 /// `Ansi` and `Plain` share the same underlying text decoder — both
 /// values exist for UI symmetry with [`Format`] (Pitfall 10, D-06).
+///
+/// Widened to `pub` so the `#[doc(hidden)] pub mod __bench` re-export in
+/// `crate::lib` can surface it to `crates/base60-cli/benches/`. The
+/// enclosing `mod cli` is private at crate root, so this enum is still
+/// unreachable from the public API (Phase 5 PERF-06, TEST-02 SC5).
+#[allow(unreachable_pub)]
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, ValueEnum)]
-pub(crate) enum InputFormat {
+pub enum InputFormat {
     /// Sniff the first non-empty line: `<!doctype|<html` → HTML,
     /// `{"offset":` → JSON, otherwise the ansi/plain text decoder.
     #[default]

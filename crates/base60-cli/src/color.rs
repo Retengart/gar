@@ -17,7 +17,15 @@ use ratatui::style::{Color, Modifier, Style};
 /// [`PALETTE_NONE`] is an all-empty palette: no escapes are emitted, which
 /// is both the correct behaviour for non-TTY output and a way to remove
 /// all branching from the hot path — the writes become zero-byte no-ops.
-pub(crate) struct Palette {
+///
+/// Widened to `pub` so the `#[doc(hidden)] pub mod __bench` re-export in
+/// `crate::lib` can surface [`PALETTE_NONE`] and [`dump_all`] (which takes
+/// `&Palette`) to `crates/base60-cli/benches/`. The enclosing `mod color`
+/// is private at crate root, so this struct is still unreachable from the
+/// public API (Phase 5 PERF-06, TEST-02 SC5).
+#[allow(unreachable_pub)]
+#[derive(Debug)]
+pub struct Palette {
     pub(crate) offset: &'static str,
     pub(crate) sep: &'static str,
     pub(crate) delim: &'static str,
@@ -34,7 +42,13 @@ pub(crate) struct Palette {
 /// No-colour palette: every field is `""`, so emitting it is a no-op.
 /// Exposed as a `static` (not `const`) so it has a single stable address
 /// that callers can compare via [`std::ptr::eq`].
-pub(crate) static PALETTE_NONE: Palette = Palette {
+///
+/// Widened to `pub` so the `#[doc(hidden)] pub mod __bench` re-export in
+/// `crate::lib` can surface it to `crates/base60-cli/benches/`. The
+/// enclosing `mod color` is private at crate root, so this static is
+/// still unreachable from the public API (Phase 5 PERF-06, TEST-02 SC5).
+#[allow(unreachable_pub)]
+pub static PALETTE_NONE: Palette = Palette {
     offset: "",
     sep: "",
     delim: "",

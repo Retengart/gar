@@ -112,7 +112,17 @@ pub(crate) fn write_line<W: Write>(
 ///
 /// The caller may supply an unbuffered writer; this function wraps it in a
 /// [`BufWriter`] internally so hot-path writes coalesce into syscalls.
-pub(crate) fn dump_all<W: Write>(
+///
+/// Widened to `pub` so the `#[doc(hidden)] pub mod __bench` re-export in
+/// `crate::lib` can surface it to `crates/base60-cli/benches/`. The
+/// enclosing `mod dump` is private at crate root, so this function is
+/// still unreachable from the public API (Phase 5 PERF-06, TEST-02 SC5).
+///
+/// # Errors
+///
+/// Propagates any [`io::Error`] returned by the underlying writer.
+#[allow(unreachable_pub)]
+pub fn dump_all<W: Write>(
     data: &[u8],
     base_offset: u64,
     w: W,

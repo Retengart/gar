@@ -11,7 +11,16 @@ repository.workspace = true
 publish.workspace = true
 
 [dev-dependencies]
+criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support", "html_reports"] }
 serial_test = { version = "3", default-features = false }
+
+[[bench]]
+name    = "convert"
+harness = false
+
+[[bench]]
+name    = "lens"
+harness = false
 
 [lints]
 workspace = true

@@ -110,8 +110,14 @@ const fn hex_digit(c: u8) -> Option<u8> {
 ///
 /// `needle` is a byte slice, not a UTF-8 string — the viewer searches
 /// binary data, so the pattern may contain arbitrary bytes.
+///
+/// Widened to `pub` so the `#[doc(hidden)] pub mod __bench` re-export in
+/// `crate::lib` can surface it to `crates/base60-cli/benches/`. The
+/// enclosing `mod search` is private at crate root, so this function is
+/// still unreachable from the public API (Phase 5 PERF-06, TEST-02 SC5).
+#[allow(unreachable_pub)]
 #[must_use]
-pub(crate) fn find_all(haystack: &[u8], needle: &[u8]) -> Vec<usize> {
+pub fn find_all(haystack: &[u8], needle: &[u8]) -> Vec<usize> {
     if needle.is_empty() || needle.len() > haystack.len() {
         return Vec::new();
     }

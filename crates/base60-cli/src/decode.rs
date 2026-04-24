@@ -76,7 +76,18 @@ enum SniffedFormat {
 /// Lines without a recognisable digit run are skipped silently, matching
 /// the behaviour of tools like `xxd -r` on mixed input. The first
 /// malformed digit aborts with a contextual [`io::Error`].
-pub(crate) fn decode_stream<R: BufRead, W: Write>(
+///
+/// Widened to `pub` so the `#[doc(hidden)] pub mod __bench` re-export in
+/// `crate::lib` can surface it to `crates/base60-cli/benches/`. The
+/// enclosing `mod decode` is private at crate root, so this function is
+/// still unreachable from the public API (Phase 5 PERF-06, TEST-02 SC5).
+///
+/// # Errors
+///
+/// Returns the first [`io::Error`] encountered reading `r`, writing `w`,
+/// or from a malformed digit pair (carries the originating line number).
+#[allow(unreachable_pub)]
+pub fn decode_stream<R: BufRead, W: Write>(
     mut r: R,
     w: &mut W,
     input_format: InputFormat,

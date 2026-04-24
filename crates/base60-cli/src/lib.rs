@@ -58,6 +58,23 @@ pub mod __fuzz {
     pub use crate::search::Pattern;
 }
 
+/// Hidden re-exports for this crate's `benches/` binaries.
+///
+/// Criterion benches compile as external binaries that link only the
+/// library's `pub` surface. The functions exercised here (`dump_all`,
+/// `decode_stream`, `find_all`, `PALETTE_NONE`, `InputFormat`) are
+/// `pub(crate)` by design; re-exporting them under `__bench` keeps the
+/// non-bench public API unchanged. Unstable-by-definition; see the
+/// crate-level note on `__TuiTimeScale` (Plan 05-02, PERF-06).
+#[doc(hidden)]
+pub mod __bench {
+    pub use crate::cli::InputFormat;
+    pub use crate::color::PALETTE_NONE;
+    pub use crate::decode::decode_stream;
+    pub use crate::dump::dump_all;
+    pub use crate::search::find_all;
+}
+
 /// Entry point shared by the `base60` binary and any library consumer.
 ///
 /// # Errors
