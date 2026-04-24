@@ -309,3 +309,65 @@ pub fn spawn_with_closed_stdout(args: &[&str], stdin_bytes: &[u8]) -> std::proce
     drop(child.stdout.take());
     child.wait().expect("wait base60")
 }
+
+// ---------------------------------------------------------------------
+// TUI drive helper (Plan 04-04). Shared by `tests/tui.rs` and
+// `tests/persist.rs`: spins up an in-process 80×24 TestBackend, pushes
+// the canonical drive sequence (`j j j j j m a q` — 5 cursor-downs,
+// bookmark slot 'a', quit), and returns when the TUI saves state and
+// exits cleanly.
+//
+// Callers OWN env mutation (XDG_STATE_HOME / HOME) under
+// `#[serial(env)]` and the corresponding `unsafe { env::set_var /
+// remove_var }` pairs (Rust 2024 + Phase 2 D-07 + Pitfall 5).
+// ---------------------------------------------------------------------
+
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+use ratatui::Terminal;
+use ratatui::backend::TestBackend;
+use std::path::Path;
+
+/// Drive the TUI through `j j j j j m a q` against the given fixture
+/// file, returning after the TUI cleanly exits.
+///
+/// # Panics
+///
+/// Panics if `Terminal::new` or `run_with_terminal` returns an error —
+/// both indicate a test-environment failure, not a production bug.
+pub fn drive_tui_to_quit_with_fixture(fixture_bytes: &[u8], fixture_path: &Path) {
+    let events: Vec<Event> = vec![
+        key('j'),
+        key('j'),
+        key('j'),
+        key('j'),
+        key('j'),
+        key('m'),
+        key('a'),
+        key('q'),
+    ];
+    let mut iter = events.into_iter();
+
+    let backend = TestBackend::new(80, 24);
+    let mut terminal = Terminal::new(backend).expect("terminal init");
+
+    base60::__test_hooks::run_with_terminal(
+        &mut terminal,
+        fixture_bytes,
+        0, // base_offset
+        base60::LensMode::None,
+        base60::__TuiTimeScale::Gar, // re-exported TimeScale
+        false,                       // purist
+        Some(fixture_path),
+        || Ok(iter.next()),
+    )
+    .expect("tui run");
+}
+
+const fn key(c: char) -> Event {
+    Event::Key(KeyEvent {
+        code: KeyCode::Char(c),
+        modifiers: KeyModifiers::NONE,
+        kind: KeyEventKind::Press,
+        state: KeyEventState::NONE,
+    })
+}
