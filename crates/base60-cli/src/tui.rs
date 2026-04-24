@@ -9,12 +9,15 @@ use crate::search::{self, Pattern};
 use anyhow::Result;
 use base60_core::cuneiform;
 use base60_core::lens::Lens;
-use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
+use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
+use ratatui::Terminal;
+use ratatui::backend::Backend;
 use ratatui::layout::{Constraint, Layout};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 use std::collections::HashMap;
+use std::io;
 use std::path::{Path, PathBuf};
 
 const TITLE: &str = " 𒁹 base60 — hjkl  L:lens  /:find  m/':mark  ]/[ pze:jump  q:quit 𒌋 ";
@@ -58,6 +61,53 @@ pub(crate) fn run(
     purist: bool,
     input_file: Option<&Path>,
 ) -> Result<()> {
+    ratatui::run(|terminal| -> Result<()> {
+        run_with_terminal(
+            terminal,
+            data,
+            base_offset,
+            initial_mode,
+            scale,
+            purist,
+            input_file,
+            || crossterm::event::read().map(Some),
+        )
+    })
+}
+
+/// Seam driving the TUI event loop against an arbitrary [`Backend`] and
+/// event source. The production [`run`] wraps this with
+/// [`ratatui::run`] + [`crossterm::event::read`]; integration tests pass
+/// [`ratatui::backend::TestBackend`] + a pre-built event iterator.
+///
+/// `next_event` returns `Ok(None)` to signal clean shutdown (event
+/// source exhausted) — the TUI saves state (if `input_file` is `Some`)
+/// and returns without error.
+///
+/// # Errors
+///
+/// Propagates I/O errors from [`Terminal::draw`] or the injected
+/// `next_event` closure.
+// 8 args maps 1:1 to `run`'s 6 args plus the `&mut Terminal` + event
+// closure injected for tests; splitting would just move the tuple one
+// indirection deeper without improving the call sites.
+#[allow(clippy::too_many_arguments)]
+#[doc(hidden)]
+pub fn run_with_terminal<B, F>(
+    terminal: &mut Terminal<B>,
+    data: &[u8],
+    base_offset: u64,
+    initial_mode: LensMode,
+    scale: TimeScale,
+    purist: bool,
+    input_file: Option<&Path>,
+    mut next_event: F,
+) -> Result<()>
+where
+    B: Backend,
+    B::Error: std::error::Error + Send + Sync + 'static,
+    F: FnMut() -> io::Result<Option<Event>>,
+{
     let mut state = ViewState::new(data, initial_mode, scale, purist);
 
     // Per-file persistence: restore on entry, persist on clean exit.
@@ -69,24 +119,30 @@ pub(crate) fn run(
         state.apply_persisted(saved);
     }
 
-    ratatui::run(|terminal| -> Result<()> {
-        loop {
-            terminal.draw(|frame| state.draw(frame, data, base_offset))?;
+    loop {
+        terminal.draw(|frame| state.draw(frame, data, base_offset))?;
 
-            let Event::Key(key) = event::read()? else {
-                continue;
-            };
-            if key.kind != KeyEventKind::Press {
-                continue;
+        let Some(event) = next_event()? else {
+            // Event source exhausted — persist state on clean shutdown.
+            if let Some(path) = &persist_path {
+                persist::save(path, &state.snapshot());
             }
-            if state.handle_key(key.code, key.modifiers, data).is_break() {
-                if let Some(path) = &persist_path {
-                    persist::save(path, &state.snapshot());
-                }
-                break Ok(());
-            }
+            return Ok(());
+        };
+
+        let Event::Key(key) = event else {
+            continue;
+        };
+        if key.kind != KeyEventKind::Press {
+            continue;
         }
-    })
+        if state.handle_key(key.code, key.modifiers, data).is_break() {
+            if let Some(path) = &persist_path {
+                persist::save(path, &state.snapshot());
+            }
+            return Ok(());
+        }
+    }
 }
 
 /// Scroll state + derived layout sizes shared between `draw` and

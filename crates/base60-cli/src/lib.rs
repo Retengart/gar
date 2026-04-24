@@ -27,6 +27,23 @@ use std::io::{BufReader, BufWriter, IsTerminal, stdout};
 
 pub use cli::{Format, LensMode};
 
+/// Hidden re-exports reserved for this crate's integration tests.
+///
+/// These items are NOT part of the public API — they exist so
+/// `crates/base60-cli/tests/tui.rs` and `tests/persist.rs` can drive
+/// the TUI against a `ratatui::backend::TestBackend`. The prefix `__`
+/// and the `#[doc(hidden)]` attribute signal that no external consumer
+/// should depend on them. They may change or disappear in any release.
+#[doc(hidden)]
+pub use cli::TimeScale as __TuiTimeScale;
+
+#[doc(hidden)]
+pub mod __test_hooks {
+    //! Test-only hooks. Unstable-by-definition; see the crate-level
+    //! note on `__TuiTimeScale`. Plan 04-04 (TEST-05).
+    pub use crate::tui::run_with_terminal;
+}
+
 /// Entry point shared by the `base60` binary and any library consumer.
 ///
 /// # Errors

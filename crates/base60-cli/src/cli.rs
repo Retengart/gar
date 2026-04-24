@@ -102,8 +102,13 @@ pub(crate) fn build_lens(mode: LensMode, scale: TimeScale, purist: bool) -> Opti
 }
 
 /// Scale for a raw `u64` under `--lens=time`. One `gar` is ≈ 2 seconds.
+///
+/// Surfaced as `pub` so the `#[doc(hidden)]` re-export
+/// `base60::__TuiTimeScale` can forward it to integration tests that
+/// drive `base60::__test_hooks::run_with_terminal`. No stability
+/// guarantee — see the crate-level note on `__TuiTimeScale`.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, ValueEnum)]
-pub(crate) enum TimeScale {
+pub enum TimeScale {
     /// Raw Sumerian `gar` ticks (historical default).
     #[default]
     Gar,
