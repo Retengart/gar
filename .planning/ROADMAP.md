@@ -43,7 +43,7 @@
 **Plans**: 3 plans
 - [x] 02-01-workspace-prep-PLAN.md — add xtask workspace member + serial_test dev-dep on both crates [TEST-04]
 - [x] 02-02-serial-env-annotations-PLAN.md — annotate 7 env-mutating tests with #[serial(env)] across main.rs/cuneiform.rs/lens.rs [TEST-04]
-- [ ] 02-03-env-discipline-gate-PLAN.md — xtask gate integration test + smoke-serial.sh + CI --test-threads=8 step [TEST-04]
+- [x] 02-03-env-discipline-gate-PLAN.md — xtask gate integration test + smoke-serial.sh + CI --test-threads=8 step [TEST-04]
 **Parallel-safe with**: Phase 1 (disjoint files; REF-01/REF-02 touch `chunk.rs`/`cli.rs`, TEST-04 is a mechanical annotation pass).
 
 ### Phase 3: Roundtrip Matrix + Fixture Integration
