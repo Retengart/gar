@@ -152,9 +152,8 @@ fn decode_from_text<R: BufRead, W: Write>(r: R, w: &mut W) -> io::Result<()> {
         let Some(run) = find_digit_run(&line) else {
             continue;
         };
-        // `parse_run` currently takes `&str`; Plan 04-02 tightens the
-        // signature to `&[u8; RUN_LEN]`. `run` is already length-checked
-        // by `find_digit_run`.
+        // `find_digit_run` returns `&[u8; RUN_LEN]` — length invariant is
+        // guaranteed at the type level (D-09). No runtime check needed.
         let value = parse_run(run, idx + 1)?;
         let bytes = value.to_be_bytes();
 
@@ -322,9 +321,9 @@ fn decode_from_html<R: BufRead, W: Write>(mut r: R, w: &mut W) -> io::Result<()>
                 run[i * (PAIR + 1) + 2] = b':';
             }
         }
-        // Synthesised `run` is pure ASCII digits + colons by construction.
-        let run_str = std::str::from_utf8(&run).expect("ascii by construction");
-        let value = parse_run(run_str, 0)?;
+        // `run` is a `[u8; RUN_LEN]` built from digits + colons; pass by
+        // reference to match `parse_run`'s array-typed signature (D-09).
+        let value = parse_run(&run, 0)?;
         let bytes = value.to_be_bytes();
         if let Some(prev) = buffered_last.take() {
             w.write_all(&prev)?;
@@ -348,8 +347,11 @@ fn decode_from_html<R: BufRead, W: Write>(mut r: R, w: &mut W) -> io::Result<()>
 }
 
 /// Locate the first `NN:NN:...:NN` run of exactly [`DIGITS`] pairs.
-/// Returns a borrow of the matched substring, or `None` if no run fits.
-fn find_digit_run(line: &str) -> Option<&str> {
+///
+/// Returns an array-typed borrow whose length is proven at compile time
+/// by the `&[u8; RUN_LEN]` return type (D-09) — callers pass the borrow
+/// straight to [`parse_run`] without any runtime length re-check.
+fn find_digit_run(line: &str) -> Option<&[u8; RUN_LEN]> {
     let bytes = line.as_bytes();
     if bytes.len() < RUN_LEN {
         return None;
@@ -360,8 +362,13 @@ fn find_digit_run(line: &str) -> Option<&str> {
             && not_extended_left(bytes, start)
             && not_extended_right(bytes, start + RUN_LEN)
         {
-            // `slice` is ASCII by construction, so `from_utf8` can't fail.
-            return Some(std::str::from_utf8(slice).expect("ascii"));
+            // `RUN_LEN` is a compile-time constant and the slice above is
+            // exactly that length, so `TryFrom<&[u8]> for &[u8; RUN_LEN]`
+            // cannot fail on the happy path. `if let Ok(..)` avoids the
+            // `clippy::expect_used` lint that `.expect(..)` would trip.
+            if let Ok(arr) = <&[u8; RUN_LEN]>::try_from(slice) {
+                return Some(arr);
+            }
         }
     }
     None
@@ -396,16 +403,39 @@ fn not_extended_right(bytes: &[u8], end: usize) -> bool {
 
 /// Decode a validated 11-pair run into its `u64` value.
 ///
-/// Uses `u128` accumulator arithmetic so a hostile input with every
-/// digit pinned at `59` (value `60^11 - 1 ≈ 3.65 · 10¹⁹`) overflows
-/// cleanly to an error instead of wrapping a `u64`.
-fn parse_run(run: &str, line_no: usize) -> io::Result<u64> {
+/// The array-typed parameter guarantees [`RUN_LEN`] bytes at compile
+/// time; callers cannot bypass the length invariant via a hand-built
+/// slice (D-09). The function still validates each non-colon byte is
+/// ASCII-digit before decoding, so a caller that skips the upstream
+/// `find_digit_run` filter still fails loudly rather than corrupting
+/// output. A `u128` accumulator detects overflow cleanly (a hostile
+/// input with every digit pinned at `59` — unreachable via ASCII digits
+/// but still within the function's arithmetic domain — yields a clean
+/// error rather than wrapping a `u64`).
+///
+/// # Errors
+///
+/// Returns [`io::ErrorKind::InvalidData`] with one of three messages:
+/// * `"line {N}: non-digit byte at pair {P}"` — byte outside `b'0'..=b'9'`.
+/// * `"line {N}: invalid base-60 digit {D} at pair {P}"` — digit `>= 60`.
+/// * `"line {N}: decoded value exceeds u64::MAX"` — overflow on the final
+///   `u128 → u64` conversion.
+fn parse_run(run: &[u8; RUN_LEN], line_no: usize) -> io::Result<u64> {
     let mut value: u128 = 0;
-    for (i, pair) in run.split(':').enumerate() {
-        debug_assert_eq!(pair.len(), 2);
-        let bytes = pair.as_bytes();
-        let hi = bytes[0] - b'0';
-        let lo = bytes[1] - b'0';
+    for i in 0..DIGITS {
+        // 3 bytes per pair: 2 digits + 1 separator. Bounds:
+        // `i < DIGITS = 11`, so `pair_start + 1 = i*3 + 1 <= 31 < RUN_LEN`.
+        let pair_start = i * (PAIR + 1);
+        let hi_byte = run[pair_start];
+        let lo_byte = run[pair_start + 1];
+        if !hi_byte.is_ascii_digit() || !lo_byte.is_ascii_digit() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("line {line_no}: non-digit byte at pair {}", i + 1),
+            ));
+        }
+        let hi = hi_byte - b'0';
+        let lo = lo_byte - b'0';
         let digit = hi * 10 + lo;
         if digit >= 60 {
             return Err(io::Error::new(
@@ -599,6 +629,39 @@ mod tests {
         let mut out = Vec::new();
         decode_stream(html.as_bytes(), &mut out, InputFormat::Auto).unwrap();
         assert_eq!(out, vec![0_u8, 0, 0, 0, 0, 0, 0, 1]);
+    }
+
+    // ---------- REF-03 (Plan 04-02) additions ----------
+
+    /// Directly exercises the internal non-digit guard that [`parse_run`]
+    /// owns after Plan 04-02 (D-09). `find_digit_run` normally pre-filters
+    /// non-ASCII-digit bytes, so this is belt-and-braces coverage of the
+    /// defensive error path inside `parse_run` itself.
+    #[test]
+    fn parse_run_flags_non_digit_byte_at_pair_position() {
+        let mut run = *b"00:00:00:00:00:00:00:00:00:00:00";
+        // Clobber the second pair's high byte with a non-digit.
+        run[3] = b'X';
+        let err = parse_run(&run, 1).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+        assert!(
+            err.to_string().contains("non-digit byte at pair 2"),
+            "unexpected message: {err}",
+        );
+    }
+
+    /// Direct invocation of `parse_run` on an array-sized run of `99`
+    /// pairs — first pair triggers the `digit >= 60` branch; wording must
+    /// match the format string pinned by `tests/cli.rs` (D-10).
+    #[test]
+    fn parse_run_reports_invalid_digit_at_first_pair() {
+        let run = *b"99:00:00:00:00:00:00:00:00:00:00";
+        let err = parse_run(&run, 7).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+        assert_eq!(
+            err.to_string(),
+            "line 7: invalid base-60 digit 99 at pair 1",
+        );
     }
 
     #[test]
