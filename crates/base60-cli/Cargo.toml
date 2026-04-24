@@ -23,5 +23,8 @@ memmap2 = "0.9.10"
 ratatui = "0.30.0"
 base60-core = { path = "../base60-core" }
 
+[dev-dependencies]
+serial_test = { version = "3", default-features = false }
+
 [lints]
 workspace = true
