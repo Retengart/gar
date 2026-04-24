@@ -44,6 +44,20 @@ pub mod __test_hooks {
     pub use crate::tui::run_with_terminal;
 }
 
+/// Hidden re-exports for the repo-root `fuzz/` crate.
+///
+/// Only materialises when `cargo-fuzz` compiles this crate with
+/// `--cfg fuzzing`. Non-fuzz builds (the 3x3 CI matrix, `cargo doc`,
+/// `cargo install`) do NOT see this module, so the public API surface
+/// is unchanged in every shipped artefact (Phase 5 TEST-02 SC5,
+/// PROJECT.md Key Decision row 7).
+#[doc(hidden)]
+#[cfg(fuzzing)]
+pub mod __fuzz {
+    pub use crate::decode::{RUN_LEN, parse_run};
+    pub use crate::search::Pattern;
+}
+
 /// Entry point shared by the `base60` binary and any library consumer.
 ///
 /// # Errors

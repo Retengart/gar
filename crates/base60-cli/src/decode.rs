@@ -47,7 +47,14 @@ use std::io::{self, BufRead, Read, Write};
 /// Digit-pair width: two ASCII decimal chars per base-60 digit.
 const PAIR: usize = 2;
 /// Total characters for 11 digit pairs joined by 10 colons.
-const RUN_LEN: usize = PAIR * DIGITS + (DIGITS - 1);
+///
+/// Widened to `pub` so the `#[cfg(fuzzing)] pub mod __fuzz` re-export in
+/// `crate::lib` can surface it to the repo-root `fuzz/` crate. The
+/// enclosing `mod decode` is private at crate root, so this constant is
+/// still unreachable from the public API in non-fuzz builds
+/// (Phase 5 TEST-02 SC5).
+#[allow(unreachable_pub)]
+pub const RUN_LEN: usize = PAIR * DIGITS + (DIGITS - 1);
 /// Bytes produced per decoded run (one `u64` → 8 big-endian bytes).
 const CHUNK_BYTES: usize = 8;
 
@@ -420,7 +427,8 @@ fn not_extended_right(bytes: &[u8], end: usize) -> bool {
 /// * `"line {N}: invalid base-60 digit {D} at pair {P}"` — digit `>= 60`.
 /// * `"line {N}: decoded value exceeds u64::MAX"` — overflow on the final
 ///   `u128 → u64` conversion.
-fn parse_run(run: &[u8; RUN_LEN], line_no: usize) -> io::Result<u64> {
+#[allow(unreachable_pub)]
+pub fn parse_run(run: &[u8; RUN_LEN], line_no: usize) -> io::Result<u64> {
     let mut value: u128 = 0;
     for i in 0..DIGITS {
         // 3 bytes per pair: 2 digits + 1 separator. Bounds:

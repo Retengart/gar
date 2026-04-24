@@ -19,12 +19,24 @@
 use std::str::FromStr;
 
 /// Parsed pattern ready to hand to [`find_all`].
+///
+/// Widened to `pub` so the `#[cfg(fuzzing)] pub mod __fuzz` re-export in
+/// `crate::lib` can surface it to the repo-root `fuzz/` crate. The
+/// enclosing `mod search` is private at crate root, so this type is
+/// still unreachable from the public API in non-fuzz builds
+/// (Phase 5 TEST-02 SC5).
+#[allow(unreachable_pub)]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct Pattern(pub(crate) Vec<u8>);
+pub struct Pattern(pub(crate) Vec<u8>);
 
 /// Distinguishes user-facing failure modes from programming bugs.
+///
+/// Widened to `pub` alongside [`Pattern`]: `FromStr::Err` on a `pub` type
+/// must itself be `pub`. `mod search` stays private at crate root, so
+/// this enum is unreachable from the public API in non-fuzz builds.
+#[allow(unreachable_pub)]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum ParseError {
+pub enum ParseError {
     /// Pattern was empty after stripping any prefix/quotes.
     Empty,
     /// `hex:` prefix or auto-detected hex contained an odd number of digits

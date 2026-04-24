@@ -1,0 +1,32 @@
+[package]
+name = "base60-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+# Use independent workspace for fuzzers (added by --fuzzing-workspace=true).
+[workspace]
+resolver = "3"
+members = ["."]
+
+[dependencies]
+libfuzzer-sys = { version = "0.4", default-features = false, features = ["link_libfuzzer"] }
+base60-core = { path = "../crates/base60-core" }
+base60 = { path = "../crates/base60-cli", package = "base60" }
+
+[[bin]]
+name = "parse_run"
+path = "fuzz_targets/parse_run.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pattern_from_str"
+path = "fuzz_targets/pattern_from_str.rs"
+test = false
+doc = false
+bench = false

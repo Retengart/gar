@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = ["crates/base60-core", "crates/base60-cli", "crates/xtask"]
+exclude = ["fuzz"]
 
 [workspace.package]
 version = "0.1.0"
@@ -24,6 +25,10 @@ unreachable_pub = "warn"
 rust_2018_idioms = { level = "warn", priority = -1 }
 unused_lifetimes = "warn"
 unused_qualifications = "warn"
+# `fuzzing` cfg is set by cargo-fuzz when building from fuzz/Cargo.toml;
+# declare it here so clippy's `unexpected_cfgs` lint accepts the `#[cfg(fuzzing)]`
+# gate on the `__fuzz` re-export module in base60-cli/src/lib.rs (Phase 5 TEST-02).
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(fuzzing)"] }
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
