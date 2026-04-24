@@ -1208,23 +1208,26 @@ entries after Phase 7 has run for a few weeks, add hand-crafted seeds to
 
 **If any of A1, A3, A5 prove wrong at plan-execution time, the planner should pivot in-place rather than escalate** — they're implementation-detail choices with equivalent-correct alternatives.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Does `cargo test --workspace --all-targets --locked` try to build the benches in test mode?**
+> All four questions below have concrete recommendations; two are VERIFIED/CITED.
+> Items 1 and 4 are non-blocking (post-execution smoke paths); 2 and 3 cite external evidence.
+
+1. **RESOLVED — Does `cargo test --workspace --all-targets --locked` try to build the benches in test mode?**
    - What we know: criterion's `harness = false` tells cargo "don't run libtest's default harness for this target." But `--all-targets` normally includes `bench` targets.
    - What's unclear: does `harness = false` + `cargo test` translate to a 30-second bench run in test mode? CONTEXT.md line 295 flags this as a concern with mitigation ("if the aggregate adds more than 5s per CI cell, switch to `#[cfg(not(test))]`-gated `criterion_main!`").
    - Recommendation: planner runs `cargo test --workspace --all-targets --locked` locally AFTER Plan 05-02 lands; if wall-clock increases > 5s per cell, open a planner note to add `#[cfg(not(test))]` gating. criterion's docs say `cargo test --bench <name>` runs as a smoke test (each bench function runs one iteration). The aggregate should be small. [VERIFIED per Context7 `/bheisler/criterion.rs` `cargo_bench_support` feature docs — the harness runs a "smoke" iteration under `cargo test`.]
 
-2. **Does `base60::__fuzz::RUN_LEN` interact with `#[cfg(fuzzing)]` correctly when referenced from a fuzz_target body as `base60::__fuzz::RUN_LEN`?**
+2. **RESOLVED — Does `base60::__fuzz::RUN_LEN` interact with `#[cfg(fuzzing)]` correctly when referenced from a fuzz_target body as `base60::__fuzz::RUN_LEN`?**
    - What we know: `#[cfg(fuzzing)]` is ONLY set during `cargo fuzz build/run` compilations. The fuzz target crate (`fuzz/` workspace) compiles its binary targets with `--cfg fuzzing` propagated through path-deps to `base60` crate. So in the fuzz target compilation, `base60::__fuzz` IS present.
    - What's unclear: does cargo-fuzz's `--cfg fuzzing` propagate to the path-dep `base60` automatically, or does the fuzz manifest need `[target.'cfg(fuzzing)']` indirection?
    - Recommendation: [CITED: STACK.md line 239 "`cargo-fuzz` sets `--cfg fuzzing` on every compilation unit in the graph, so conditional exposure is clean."] Planner smoke-tests `cd fuzz && cargo +nightly fuzz build` after implementing D-05 — if `__fuzz::parse_run` is unresolved, it means cargo-fuzz changed its cfg propagation and we need a different gate (e.g., a fuzz-specific feature flag on `base60` crate).
 
-3. **Should `benches-compile` sanity check be a new xtask or left for Phase 7?**
+3. **RESOLVED — Should `benches-compile` sanity check be a new xtask or left for Phase 7?**
    - CONTEXT excludes CI changes from Phase 5 scope. Phase 7 SC4 adds `cargo bench --workspace --no-run --locked`.
    - Recommendation: Leave for Phase 7 per scope. Manual check in Plan 05-02: developer runs `cargo bench --workspace --no-run --locked` before committing; planner adds this to the plan's validation checklist.
 
-4. **Does `pub(crate) const RUN_LEN` trigger `clippy::missing_panics_doc` or `missing_docs_in_private_items`?**
+4. **RESOLVED — Does `pub(crate) const RUN_LEN` trigger `clippy::missing_panics_doc` or `missing_docs_in_private_items`?**
    - What we know: the existing const has a one-line doc comment (`decode.rs:50`).
    - What's unclear: widening to `pub(crate)` — does clippy's `missing_docs_in_private_items` demand more?
    - Recommendation: the existing 1-line doc comment is likely sufficient; if clippy fires, planner expands it (pattern shown in Example 3). Non-blocking.
