@@ -3,7 +3,7 @@
 **Created:** 2026-04-24
 **Milestone:** v2 — hardening only (no user-facing feature surface)
 **Granularity:** standard (7 phases)
-**Coverage:** 16 / 16 v2 requirements mapped
+**Coverage:** 17 / 17 v2 requirements mapped
 
 ## Phases
 
@@ -152,7 +152,7 @@ Phase 2 ──> Phase 3 / Phase 4 (provides #[serial(env)] idiom)
 | CI-02 | Phase 7 | Weekly schedule, Ubuntu+nightly only — PROJECT.md Key Decision row 9 |
 | CI-03 | Phase 7 | `cargo metadata` zero-dep check |
 
-**Coverage:** 16 / 16 v2 requirements mapped ✓ · No orphans · No duplicates
+**Coverage:** 17 / 17 v2 requirements mapped ✓ · No orphans · No duplicates
 
 ## Progress
 
