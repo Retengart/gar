@@ -165,3 +165,73 @@ fn decoder_invalid_digit_99_error_contains_the_digit() {
         .failure()
         .stderr(predicates::str::contains("99").and(predicates::str::contains("invalid")));
 }
+
+// ---------------------------------------------------------------------
+// REF-04 / Plan 04-01 — decode input-format override + legacy warning.
+// ---------------------------------------------------------------------
+
+#[test]
+fn decode_legacy_no_trailer_warns_and_continues() {
+    // A dump without the `# bytes=0x<hex>` trailer must still decode (D-03)
+    // and print a single stderr warning containing "no length metadata".
+    let dump = "00000000  00:00:00:00:00:00:00:00:00:00:00  |........|\n";
+    base60_cmd()
+        .arg("decode")
+        .write_stdin(dump)
+        .assert()
+        .success()
+        .stderr(predicates::str::contains("no length metadata"));
+}
+
+#[test]
+fn decode_input_format_flag_is_advertised_in_help() {
+    base60_cmd()
+        .arg("decode")
+        .arg("--help")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("--input-format"));
+}
+
+#[test]
+fn decode_input_format_override_forces_json() {
+    // Single chunk encoding "Hi" with a meta trailer pinning total = 2.
+    let ndjson = "\
+{\"offset\":0,\"bytes\":[72,105],\"digits\":[0,0,0,0,0,0,0,0,0,30,9],\"ascii\":\"Hi\"}
+{\"type\":\"meta\",\"bytes\":2}
+";
+    base60_cmd()
+        .arg("decode")
+        .args(["--input-format=json"])
+        .write_stdin(ndjson)
+        .assert()
+        .success()
+        .stdout(predicates::ord::eq(b"Hi".as_slice()));
+}
+
+#[test]
+fn decode_input_format_override_forces_html() {
+    // Minimal HTML with one row decoding to 0x0000_0000_0000_0001
+    // (11 digit pairs, final one `01`). Trailer clamps to 8 bytes.
+    let html = "<!doctype html><html><body><pre>\
+<span class=\"offset\">00000000</span>  \
+<span class=\"d-zero\">00</span><span class=\"sep\">:</span>\
+<span class=\"d-zero\">00</span><span class=\"sep\">:</span>\
+<span class=\"d-zero\">00</span><span class=\"sep\">:</span>\
+<span class=\"d-zero\">00</span><span class=\"sep\">:</span>\
+<span class=\"d-zero\">00</span><span class=\"sep\">:</span>\
+<span class=\"d-zero\">00</span><span class=\"sep\">:</span>\
+<span class=\"d-zero\">00</span><span class=\"sep\">:</span>\
+<span class=\"d-zero\">00</span><span class=\"sep\">:</span>\
+<span class=\"d-zero\">00</span><span class=\"sep\">:</span>\
+<span class=\"d-zero\">00</span><span class=\"sep\">:</span>\
+<span class=\"d-low\">01</span>\
+\n<!-- bytes=0x8 --></pre></body></html>\n";
+    base60_cmd()
+        .arg("decode")
+        .args(["--input-format=html"])
+        .write_stdin(html)
+        .assert()
+        .success()
+        .stdout(predicates::ord::eq([0_u8, 0, 0, 0, 0, 0, 0, 1].as_slice()));
+}

@@ -208,30 +208,23 @@ pub const ALL_LENS_CONFIGS: &[LensConfig] = &[
 /// inline form `&[(&str, fn() -> Vec<u8>)]`.
 pub type FixtureEntry = (&'static str, fn() -> Vec<u8>);
 
-/// Fixture subset covered by the full `dump | decode` roundtrip matrix.
+/// Every fixture covered by the full roundtrip matrix.
 ///
-/// Narrowed from the original 5-fixture set to the two fixtures whose
-/// lengths are exact multiples of the 8-byte chunk (128 B `minimal_elf`
-/// and 1024 B `zero_fill_1kib`). The three short-tail fixtures
-/// (`hello_world` 14 B, `minimal_png` 45 B, `minimal_zip` 22 B) are NOT
-/// roundtrip-safe under the current decoder contract: `dump` pads the
-/// final chunk with trailing NULs and `decode` cannot recover the
-/// original length. See 03-02-SUMMARY.md §Scope Deviation.
-///
-/// The other factories remain `pub` so Plan 03-03 CLI-parity tests
-/// can still exercise them outside the roundtrip hot path.
-pub const ROUNDTRIP_FIXTURES: &[FixtureEntry] = &[
+/// Phase 4 REF-04 restored full-matrix coverage: length-preserving
+/// `decode` + JSON/HTML decode paths mean every fixture (including
+/// short-tail `hello_world` 14 B / `minimal_png` 45 B / `minimal_zip`
+/// 22 B) roundtrips byte-identically.
+pub const ALL_FIXTURES: &[FixtureEntry] = &[
     ("minimal_elf", fixtures::minimal_elf),
     ("zero_fill_1kib", fixtures::zero_fill_1kib),
+    ("hello_world", fixtures::hello_world),
+    ("minimal_png", fixtures::minimal_png),
+    ("minimal_zip", fixtures::minimal_zip),
 ];
 
-/// Output formats for which `dump | decode` is byte-identical today.
-///
-/// `Format::Json` and `Format::Html` emit structural wrapping (arrays,
-/// `<pre>`, escaped literals) that `decode` does not consume — they are
-/// write-only in the current contract. Tracked as follow-up work; see
-/// 03-02-SUMMARY.md §Scope Deviation.
-pub const ROUNDTRIP_FORMATS: &[base60::Format] = &[base60::Format::Ansi, base60::Format::Plain];
+/// Every output format `dump` emits — all four now roundtrip under
+/// REF-04 (length trailer + JSON/HTML decoders).
+pub const ROUNDTRIP_FORMATS: &[base60::Format] = base60::Format::ALL;
 
 // ---------------------------------------------------------------------
 // Roundtrip assertion helper (D-14.3, D-20): on mismatch, print cell
