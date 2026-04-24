@@ -71,7 +71,7 @@
   3. `crates/base60-cli/tests/tui.rs` uses `ratatui::backend::TestBackend` + `tempfile::tempdir()` to redirect `$XDG_STATE_HOME`, drives the TUI to quit (`q`), and asserts the state file appears at the expected path with the expected `scroll` / `cursor` / `lens_mode` / `bookmarks` content.
   4. A `persist::state_base_dir` unit / integration test covers the `XDG_STATE_HOME` → `HOME` fallback ladder — tagged `#[serial(env)]` per Phase 2.
 **Plans**: 4 plans
-- [ ] 04-01-PLAN.md — length-preserving decode + JSON/HTML decode paths + matrix widen to 140 cells [REF-04]
+- [x] 04-01-PLAN.md — length-preserving decode + JSON/HTML decode paths + matrix widen to 140 cells [REF-04]
 - [ ] 04-02-PLAN.md — tighten parse_run contract (&[u8; RUN_LEN]) + expand decoder error-pin [REF-03]
 - [ ] 04-03-PLAN.md — reader coverage — mmap + stdin + file-open-error integration tests [TEST-05]
 - [ ] 04-04-PLAN.md — TUI seam-extract + TestBackend save-path + persist XDG->HOME ladder [TEST-05]
