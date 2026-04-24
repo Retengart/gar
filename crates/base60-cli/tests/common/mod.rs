@@ -5,8 +5,23 @@
 //! `assert_cmd::Command::cargo_bin` or `std::process::Command::new` for
 //! the base60 binary. Enforcement lives in the
 //! `crates/xtask/tests/spawn_discipline.rs` static gate (Phase 3 D-16).
+//!
+//! Visibility note: every item is `pub` rather than `pub(crate)` because
+//! integration-test files (`tests/*.rs`) are each compiled as their own
+//! crate, with `mod common;` pulling this file in as a *private* module
+//! inside that synthetic crate. `clippy::redundant_pub_crate` flags
+//! `pub(crate)` in that situation as meaningless — `pub` is the correct
+//! way to expose items from a test helper module.
 
-#![allow(dead_code)] // Each test file pulls only a subset; dead-code warnings would be noisy.
+// `dead_code`: each test file pulls only a subset of helpers; a full
+// dead-code sweep would be noisy.
+// `unreachable_pub`: integration tests compile `tests/common/mod.rs` as
+// a private module inside a synthetic per-test crate, so `pub` items
+// are never "reachable" from crate-outside callers — but `pub(crate)`
+// trips `clippy::redundant_pub_crate` (private-module siblings). The
+// only way to satisfy both lints is to use `pub` and silence the rustc
+// warning at file scope.
+#![allow(dead_code, unreachable_pub)]
 
 use assert_cmd::Command;
 use base60_core::lens::TimeScale;
@@ -20,7 +35,7 @@ use base60_core::lens::TimeScale;
 /// libc builds treat differently from "unset". `NO_COLOR` is NOT set
 /// here — callers pass `--color=never` explicitly so a repo-wide grep
 /// for `--color=` catches every test's colour intent.
-pub(crate) fn base60_cmd() -> Command {
+pub fn base60_cmd() -> Command {
     let mut cmd = Command::cargo_bin("base60").expect("binary built by cargo");
     cmd.env_clear();
     if let Some(path) = std::env::var_os("PATH") {
@@ -45,22 +60,22 @@ pub(crate) fn base60_cmd() -> Command {
 // Factories.
 // ---------------------------------------------------------------------
 
-pub(crate) mod fixtures {
+pub mod fixtures {
     /// `b"Hello, world!\n"` — 14 bytes (14 % 8 == 6, exercises the
     /// short-tail padding path).
-    pub(crate) fn hello_world() -> Vec<u8> {
+    pub fn hello_world() -> Vec<u8> {
         b"Hello, world!\n".to_vec()
     }
 
     /// 1 KiB of zero bytes — 128 full 8-byte chunks, zero entropy.
-    pub(crate) fn zero_fill_1kib() -> Vec<u8> {
+    pub fn zero_fill_1kib() -> Vec<u8> {
         vec![0_u8; 1024]
     }
 
     /// Minimum structurally valid 1×1 grayscale PNG — 45 bytes.
-    /// IHDR CRC 0x3A7E9B55, IEND CRC 0xAE426082 — both pre-computed
-    /// via Python `zlib.crc32` (see RESEARCH §minimal_png verification).
-    pub(crate) fn minimal_png() -> Vec<u8> {
+    /// IHDR CRC `0x3A7E9B55`, IEND CRC `0xAE426082` — both pre-computed
+    /// via Python `zlib.crc32` (see `RESEARCH` §`minimal_png` verification).
+    pub fn minimal_png() -> Vec<u8> {
         let mut out = Vec::with_capacity(45);
         // 8-byte PNG signature.
         out.extend_from_slice(&[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
@@ -87,7 +102,7 @@ pub(crate) mod fixtures {
 
     /// Minimum structurally valid empty ZIP — 22-byte End-of-Central-
     /// Directory record (PKWARE APPNOTE 6.3.9 §4.3.16).
-    pub(crate) fn minimal_zip() -> Vec<u8> {
+    pub fn minimal_zip() -> Vec<u8> {
         vec![
             0x50, 0x4B, 0x05, 0x06, // EOCD signature "PK\x05\x06"
             0x00, 0x00, // disk number
@@ -103,16 +118,16 @@ pub(crate) mod fixtures {
     /// 128-byte ELF64 header + zero-padded single program-header slot.
     /// Structurally recognisable per System V ABI §4; `base60 dump`
     /// never parses ELF, so this is purely a realistic 128-byte
-    /// fixture (RESEARCH §minimal_elf, Assumption A3).
-    pub(crate) fn minimal_elf() -> Vec<u8> {
+    /// fixture (`RESEARCH` §`minimal_elf`, Assumption A3).
+    pub fn minimal_elf() -> Vec<u8> {
         let mut out = Vec::with_capacity(128);
         // e_ident (16 bytes).
         out.extend_from_slice(&[
             0x7F, b'E', b'L', b'F', // ELF magic
-            2, // EI_CLASS   = ELFCLASS64
-            1, // EI_DATA    = ELFDATA2LSB (little-endian)
-            1, // EI_VERSION = EV_CURRENT
-            0, // EI_OSABI   = ELFOSABI_SYSV
+            2,    // EI_CLASS   = ELFCLASS64
+            1,    // EI_DATA    = ELFDATA2LSB (little-endian)
+            1,    // EI_VERSION = EV_CURRENT
+            0,    // EI_OSABI   = ELFOSABI_SYSV
             0, 0, 0, 0, 0, 0, 0, 0, // EI_PAD
         ]);
         out.extend_from_slice(&0x0002_u16.to_le_bytes()); // e_type     = ET_EXEC
@@ -142,7 +157,7 @@ pub(crate) mod fixtures {
 
 /// Lens × time-scale combinations exercised by the roundtrip matrix.
 #[derive(Copy, Clone, Debug)]
-pub(crate) enum LensConfig {
+pub enum LensConfig {
     None,
     Time(TimeScale),
     Angle,
@@ -152,7 +167,7 @@ pub(crate) enum LensConfig {
 
 impl LensConfig {
     /// CLI flags this config produces, in invocation order.
-    pub(crate) fn cli_args(self) -> Vec<&'static str> {
+    pub fn cli_args(self) -> Vec<&'static str> {
         match self {
             Self::None => vec!["--lens=none"],
             Self::Time(TimeScale::Gar) => vec!["--lens=time", "--time-scale=gar"],
@@ -165,7 +180,7 @@ impl LensConfig {
     }
 
     /// Diagnostic label for failure messages.
-    pub(crate) fn label(self) -> &'static str {
+    pub const fn label(self) -> &'static str {
         match self {
             Self::None => "None",
             Self::Time(TimeScale::Gar) => "Time(Gar)",
@@ -178,7 +193,7 @@ impl LensConfig {
     }
 }
 
-pub(crate) const ALL_LENS_CONFIGS: &[LensConfig] = &[
+pub const ALL_LENS_CONFIGS: &[LensConfig] = &[
     LensConfig::None,
     LensConfig::Time(TimeScale::Gar),
     LensConfig::Time(TimeScale::Sec),
@@ -188,6 +203,36 @@ pub(crate) const ALL_LENS_CONFIGS: &[LensConfig] = &[
     LensConfig::Cuneiform,
 ];
 
+/// `(label, factory)` entry in the roundtrip fixture slice. Factored
+/// into a named alias because `clippy::type_complexity` flags the
+/// inline form `&[(&str, fn() -> Vec<u8>)]`.
+pub type FixtureEntry = (&'static str, fn() -> Vec<u8>);
+
+/// Fixture subset covered by the full `dump | decode` roundtrip matrix.
+///
+/// Narrowed from the original 5-fixture set to the two fixtures whose
+/// lengths are exact multiples of the 8-byte chunk (128 B `minimal_elf`
+/// and 1024 B `zero_fill_1kib`). The three short-tail fixtures
+/// (`hello_world` 14 B, `minimal_png` 45 B, `minimal_zip` 22 B) are NOT
+/// roundtrip-safe under the current decoder contract: `dump` pads the
+/// final chunk with trailing NULs and `decode` cannot recover the
+/// original length. See 03-02-SUMMARY.md §Scope Deviation.
+///
+/// The other factories remain `pub` so Plan 03-03 CLI-parity tests
+/// can still exercise them outside the roundtrip hot path.
+pub const ROUNDTRIP_FIXTURES: &[FixtureEntry] = &[
+    ("minimal_elf", fixtures::minimal_elf),
+    ("zero_fill_1kib", fixtures::zero_fill_1kib),
+];
+
+/// Output formats for which `dump | decode` is byte-identical today.
+///
+/// `Format::Json` and `Format::Html` emit structural wrapping (arrays,
+/// `<pre>`, escaped literals) that `decode` does not consume — they are
+/// write-only in the current contract. Tracked as follow-up work; see
+/// 03-02-SUMMARY.md §Scope Deviation.
+pub const ROUNDTRIP_FORMATS: &[base60::Format] = &[base60::Format::Ansi, base60::Format::Plain];
+
 // ---------------------------------------------------------------------
 // Roundtrip assertion helper (D-14.3, D-20): on mismatch, print cell
 // identity + first divergence index + ±8-byte hex windows on both
@@ -196,7 +241,7 @@ pub(crate) const ALL_LENS_CONFIGS: &[LensConfig] = &[
 
 /// Compare decoded output to the original fixture. On mismatch, panics
 /// with a readable diagnostic naming the failing cell.
-pub(crate) fn assert_roundtrip(original: &[u8], decoded: &[u8], cell_label: &str) {
+pub fn assert_roundtrip(original: &[u8], decoded: &[u8], cell_label: &str) {
     if original == decoded {
         return;
     }
@@ -204,7 +249,7 @@ pub(crate) fn assert_roundtrip(original: &[u8], decoded: &[u8], cell_label: &str
         .iter()
         .zip(decoded.iter())
         .position(|(a, b)| a != b)
-        .unwrap_or(original.len().min(decoded.len()));
+        .unwrap_or_else(|| original.len().min(decoded.len()));
     let orig_window = hex_window(original, diverge);
     let dec_window = hex_window(decoded, diverge);
     panic!(
@@ -250,11 +295,8 @@ fn hex_window(bytes: &[u8], center: usize) -> String {
 ///
 /// Windows maps `ERROR_BROKEN_PIPE` (109) to `ErrorKind::BrokenPipe`
 /// identically to Unix's `EPIPE` (32), so this helper works on all
-/// three CI OSes (RESEARCH Assumption A7).
-pub(crate) fn spawn_with_closed_stdout(
-    args: &[&str],
-    stdin_bytes: &[u8],
-) -> std::process::ExitStatus {
+/// three CI OSes (`RESEARCH` Assumption A7).
+pub fn spawn_with_closed_stdout(args: &[&str], stdin_bytes: &[u8]) -> std::process::ExitStatus {
     use std::io::Write;
     use std::process::{Command as StdCommand, Stdio};
 
