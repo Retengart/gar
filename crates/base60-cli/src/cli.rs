@@ -38,6 +38,20 @@ pub(crate) enum LensMode {
 }
 
 impl LensMode {
+    /// Every variant in cycle order. Tests iterate this slice to prove
+    /// `cycle`, `label`, `build_lens`, and `persist::parse_lens` stay
+    /// exhaustive whenever a new variant is added.
+    // Phase 3 (TEST-01) will iterate this in production code; suppress
+    // the dead-code lint in the interim.
+    #[allow(dead_code)]
+    pub(crate) const ALL: &[Self] = &[
+        Self::None,
+        Self::Time,
+        Self::Angle,
+        Self::Tablet,
+        Self::Cuneiform,
+    ];
+
     /// Advance through the lens cycle used by the interactive viewer's
     /// `L` key. Wraps back to [`LensMode::None`] from [`LensMode::Cuneiform`].
     #[must_use]
@@ -253,4 +267,57 @@ pub(crate) struct CompletionsArgs {
     /// `elvish`, `powershell`.
     #[arg(value_enum)]
     pub(crate) shell: Shell,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::persist;
+
+    #[test]
+    fn all_contains_every_variant_in_cycle_order() {
+        // Walking `cycle()` from `None` for `ALL.len()` steps must
+        // yield the same sequence listed in `ALL`, then loop back to
+        // `None`. This catches (a) a missing variant in `ALL`
+        // (D-08 Test 1 intent), (b) a misordered `ALL` (D-09 intent),
+        // and (c) a cycle that skips or revisits a variant — all in
+        // one assertion.
+        let mut walk = LensMode::None;
+        for &expected in LensMode::ALL {
+            assert_eq!(walk, expected);
+            walk = walk.cycle();
+        }
+        assert_eq!(walk, LensMode::None);
+    }
+
+    #[test]
+    fn all_methods_total_over_all() {
+        for &mode in LensMode::ALL {
+            // Every variant has a non-empty label.
+            let lbl = mode.label();
+            assert!(!lbl.is_empty(), "label empty for {mode:?}");
+
+            // `cycle()` maps into `ALL` (no stray variant synthesised).
+            let next = mode.cycle();
+            assert!(
+                LensMode::ALL.contains(&next),
+                "cycle({mode:?}) = {next:?} is not in LensMode::ALL",
+            );
+
+            // `build_lens` dispatches without panicking. We do not
+            // inspect the returned trait object — only that no arm
+            // is missing from `build_lens`'s match.
+            let _lens = build_lens(mode, TimeScale::default(), false);
+
+            // `persist::parse_lens` round-trips the label back to
+            // the same variant for every non-None case. `None`'s
+            // label "—" is unknown to `parse_lens` and falls back
+            // to `None` — still the same variant.
+            assert_eq!(
+                persist::parse_lens(lbl),
+                mode,
+                "parse_lens({lbl:?}) did not round-trip to {mode:?}",
+            );
+        }
+    }
 }
