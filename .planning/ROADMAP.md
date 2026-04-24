@@ -11,7 +11,7 @@
 - [ ] **Phase 2: Env-Test Serialisation** — Adopt `serial_test` with a single `env` key before any new env-mutating test lands.
 - [ ] **Phase 3: Roundtrip Matrix + Fixture Integration** — Assert byte-identical dump↔decode across every `LensMode × Format` combination; fixture-driven `assert_cmd` coverage.
 - [ ] **Phase 4: Tighten `parse_run` + Close Coverage Gaps** — REF-03 ships behind Phase 3's safety net; cover mmap/stdin/TUI-save paths.
-- [ ] **Phase 5: Fuzz + Criterion Harnesses** — Weekly-runnable fuzz targets and advisory-only bench scaffolding — Phase 6's prerequisite.
+- [x] **Phase 5: Fuzz + Criterion Harnesses** — Weekly-runnable fuzz targets and advisory-only bench scaffolding — Phase 6's prerequisite. (completed 2026-04-24)
 - [ ] **Phase 6: Streaming + Performance Pass** — Each PERF-0X change ships with before/after numbers from Phase 5 benches.
 - [ ] **Phase 7: CI Hardening** — Weekly scheduled fuzz job + enforced zero-dep invariant on `base60-core`.
 
@@ -89,7 +89,7 @@
   5. `#[cfg(fuzzing)] pub` hatch for `decode::parse_run` and `search::Pattern` is verified: non-fuzzing `cargo check --workspace` leaves the public API surface unchanged (`cargo public-api` or equivalent manual diff confirms no new `pub` item in `base60-core` or `base60-cli` outside the fuzz-gated hatch).
 **Plans**: 2 plans
 - [x] 05-01-PLAN.md — fuzz crate scaffolding with parse_run + pattern_from_str targets + `__fuzz` hatch + `parse_run`/`RUN_LEN` pub(crate) bump [TEST-02]
-- [ ] 05-02-PLAN.md — criterion bench scaffolding (2 core + 3 cli benches) + `__bench` shim + advisory-only README [PERF-06]
+- [x] 05-02-PLAN.md — criterion bench scaffolding (2 core + 3 cli benches) + `__bench` shim + advisory-only README [PERF-06]
 **Parallel-safe with**: Phase 3 (disjoint files — Phase 3 touches `tests/`, Phase 5 touches `fuzz/` and `benches/`). Phase 5 can also be parallelised with Phase 4 once Phase 1 + Phase 3 have merged.
 
 ### Phase 6: Streaming + Performance Pass
@@ -168,7 +168,7 @@ Phase 2 ──> Phase 3 / Phase 4 (provides #[serial(env)] idiom)
 | 2. Env-Test Serialisation | 0 / TBD | Not started | — |
 | 3. Roundtrip Matrix + Fixture Integration | 0 / TBD | Not started | — |
 | 4. Tighten parse_run + Close Coverage Gaps | 0 / TBD | Not started | — |
-| 5. Fuzz + Criterion Harnesses | 1/2 | In Progress|  |
+| 5. Fuzz + Criterion Harnesses | 2/2 | Complete   | 2026-04-24 |
 | 6. Streaming + Performance Pass | 0 / TBD | Not started | — |
 | 7. CI Hardening | 0 / TBD | Not started | — |
 
