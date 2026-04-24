@@ -56,7 +56,7 @@
   3. All fixtures are generated in-test (`fn minimal_elf() -> Vec<u8>`, etc.) — `git ls-files | xargs stat -c '%s'` shows no tracked file over 8 KiB inside `tests/`.
   4. A shared `crates/base60-cli/tests/common/mod.rs` helper (`base60_cmd()` with `.env_clear()` + explicit `--color`) is the only way tests spawn the binary; grep verifies no raw `Command::cargo_bin` invocations outside `common/`.
 **Plans**: 3 plans
-- [ ] 03-01-PLAN.md — thin `[lib]` target + `Format::ALL` dispatch table (prereq for matrix; widens `LensMode::ALL` to `pub`)
+- [x] 03-01-PLAN.md — thin `[lib]` target + `Format::ALL` dispatch table (prereq for matrix; widens `LensMode::ALL` to `pub`)
 - [ ] 03-02-PLAN.md — 140-cell roundtrip matrix + `tests/common/mod.rs` + xtask spawn-discipline gate [TEST-01, TEST-03]
 - [ ] 03-03-PLAN.md — per-subcommand fixtures + CLI edges (stdin/BrokenPipe/color/clamps/decoder pin) [TEST-03]
 **Parallel-safe with**: Phase 5's bench scaffolding (disjoint new files under `benches/`).
