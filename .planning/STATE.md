@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
+status: ready_to_plan
 last_updated: "2026-04-23T22:35:01.417Z"
 progress:
   total_phases: 7
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
   completed_plans: 0
-  percent: 0
+  percent: 14
 ---
 
 # Project State — base60 v2
@@ -27,9 +27,9 @@ progress:
 Phase: 01 (refactor-foundations) — EXECUTING
 Plan: 1 of 2
 **Milestone:** v2 hardening
-**Phase:** Not started (roadmap freshly written)
-**Plan:** None
-**Status:** Executing Phase 01
+**Phase:** 2
+**Plan:** Not started
+**Status:** Ready to plan
 **Progress:** 0 / 7 phases complete
 
 ```
