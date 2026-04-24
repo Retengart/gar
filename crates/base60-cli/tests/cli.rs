@@ -3,10 +3,11 @@
 //! - `BrokenPipe` exit-0 contract on `dump`
 //! - `NO_COLOR` env + `--color={auto,always,never}` precedence
 //! - `--skip` / `--length` clamping
-//! - Decoder error-message pin (Pitfall 8 — locks the format so
-//!   Phase 4's REF-03 refactor cannot silently drift it).
+//! - Decoder error-message pin — full-message + position-pinning
+//!   (Pitfall 8 remediation; Phase 4 Plan 04-02 D-10/D-11 tightens
+//!   the loose `"99" + "invalid"` assertion inherited from Phase 3).
 //!
-//! Phase 3 TEST-03 (D-13).
+//! Phase 3 TEST-03 (D-13); Phase 4 REF-03 (Plan 04-02).
 
 mod common;
 
@@ -141,15 +142,13 @@ fn zero_skip_is_identity() {
 }
 
 // ---------------------------------------------------------------------
-// Decoder error-message pin (Pitfall 8 / D-13).
+// Decoder error-message pin (Pitfall 8 / D-10 / D-11).
 //
-// Phase 4 (REF-03) will tighten `decode::parse_run`'s signature. If
-// the refactor silently changes the error `format!` string, this test
-// fails with a clear diagnostic pointing at the semantic drift. The
-// assertion requires BOTH "99" (the offending digit) AND "invalid"
-// (the human-readable category). Two substrings is the sweet spot:
-// tight enough to catch drift, loose enough to tolerate harmless
-// reword (e.g., changing "at pair N" phrasing).
+// Plan 04-02 tightens the loose `"99" + "invalid"` pin from Phase 3 to
+// a FULL-MESSAGE contains on the literal error format, locking the
+// line-number + pair-position + digit-value + exact phrasing in one
+// assertion. The three follow-up tests prove the pair index advances
+// correctly (pair 1, pair 5) and that non-digit-run lines stay silent.
 // ---------------------------------------------------------------------
 
 #[test]
@@ -163,7 +162,53 @@ fn decoder_invalid_digit_99_error_contains_the_digit() {
         .write_stdin(dump)
         .assert()
         .failure()
-        .stderr(predicates::str::contains("99").and(predicates::str::contains("invalid")));
+        .stderr(predicates::str::contains(
+            "line 1: invalid base-60 digit 99 at pair 11",
+        ));
+}
+
+#[test]
+fn decoder_invalid_digit_at_pair_1_reports_pair_1() {
+    // FIRST pair is 99 (hi=9, lo=9 → 99 ≥ 60). `parse_run` returns on
+    // the first invalid digit, so the error must report pair 1.
+    let dump = "00000000  99:00:00:00:00:00:00:00:00:00:00  |........|\n";
+    base60_cmd()
+        .arg("decode")
+        .write_stdin(dump)
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "line 1: invalid base-60 digit 99 at pair 1",
+        ));
+}
+
+#[test]
+fn decoder_invalid_digit_at_pair_5_reports_pair_5() {
+    // FIFTH pair is 99; pairs 1–4 are valid `00`, so `parse_run`
+    // advances to pair 5 before raising.
+    let dump = "00000000  00:00:00:00:99:00:00:00:00:00:00  |........|\n";
+    base60_cmd()
+        .arg("decode")
+        .write_stdin(dump)
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "line 1: invalid base-60 digit 99 at pair 5",
+        ));
+}
+
+#[test]
+fn decoder_ignores_non_digit_run_lines() {
+    // Free-form text without an 11-pair run is skipped silently by
+    // `find_digit_run` (D-11). If REF-03 accidentally collapsed
+    // "no run found" into an error, this test fails immediately.
+    let garbage = "some prefix\n# bytes=0x10\nhello world\n\n";
+    base60_cmd()
+        .arg("decode")
+        .write_stdin(garbage)
+        .assert()
+        .success()
+        .stdout(predicates::str::is_empty());
 }
 
 // ---------------------------------------------------------------------
