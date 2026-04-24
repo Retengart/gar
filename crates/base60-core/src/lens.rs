@@ -205,6 +205,7 @@ impl Lens for CuneiformLens {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     #[test]
     fn time_zero_is_start_of_day() {
@@ -319,6 +320,7 @@ mod tests {
     }
 
     #[test]
+    #[serial(env)]
     fn cuneiform_auto_respects_no_unicode_env() {
         // SAFETY: single-threaded env manipulation inside a test.
         unsafe { std::env::set_var("NO_UNICODE", "1") };

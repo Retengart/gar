@@ -91,6 +91,7 @@ pub fn ascii_fallback_forced() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     #[test]
     fn zero_uses_placeholder() {
@@ -148,6 +149,7 @@ mod tests {
     }
 
     #[test]
+    #[serial(env)]
     fn fallback_detection_respects_no_unicode_env() {
         // SAFETY: env manipulation is unsafe in Rust 2024; tests are
         // single-threaded inside a process and clean up after themselves.

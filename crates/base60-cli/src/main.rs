@@ -173,6 +173,7 @@ fn pick_palette(choice: ColorChoice, stdout_is_tty: bool) -> &'static Palette {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     /// The ANSI palette emits a non-empty reset sequence; the mono palette
     /// does not. This is a stable content-level discriminator that avoids
@@ -182,6 +183,7 @@ mod tests {
     }
 
     #[test]
+    #[serial(env)]
     fn auto_with_tty_and_no_env_is_ansi() {
         // SAFETY: Rust 2024 marks `env::remove_var` unsafe because parallel
         // threads may observe a half-updated environment. Cargo runs each
@@ -194,6 +196,7 @@ mod tests {
     }
 
     #[test]
+    #[serial(env)]
     fn auto_with_no_tty_is_mono() {
         // SAFETY: see `auto_with_tty_and_no_env_is_ansi`.
         unsafe { std::env::remove_var("NO_COLOR") };
@@ -201,6 +204,7 @@ mod tests {
     }
 
     #[test]
+    #[serial(env)]
     fn auto_with_no_color_env_is_mono() {
         // SAFETY: see `auto_with_tty_and_no_env_is_ansi`.
         unsafe { std::env::set_var("NO_COLOR", "1") };
@@ -210,11 +214,13 @@ mod tests {
     }
 
     #[test]
+    #[serial(env)]
     fn always_forces_ansi_even_without_tty() {
         assert!(is_ansi(pick_palette(ColorChoice::Always, false)));
     }
 
     #[test]
+    #[serial(env)]
     fn never_forces_mono_even_with_tty() {
         assert!(!is_ansi(pick_palette(ColorChoice::Never, true)));
     }
