@@ -311,13 +311,20 @@ mod tests {
 
             // `persist::parse_lens` round-trips the label back to
             // the same variant for every non-None case. `None`'s
-            // label "—" is unknown to `parse_lens` and falls back
-            // to `None` — still the same variant.
-            assert_eq!(
-                persist::parse_lens(lbl),
-                mode,
-                "parse_lens({lbl:?}) did not round-trip to {mode:?}",
-            );
+            // label "—" is intentionally not a valid persisted label;
+            // it maps to `None` via the unknown-label fallback, so we
+            // assert that fallback explicitly rather than relying on
+            // strict equality (which would silently tolerate a future
+            // variant whose label happens to fall into the same bucket).
+            if mode == LensMode::None {
+                assert_eq!(persist::parse_lens(lbl), LensMode::None);
+            } else {
+                assert_eq!(
+                    persist::parse_lens(lbl),
+                    mode,
+                    "parse_lens({lbl:?}) did not round-trip to {mode:?}",
+                );
+            }
         }
     }
 }
