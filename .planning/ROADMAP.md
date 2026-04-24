@@ -73,7 +73,7 @@
 **Plans**: 4 plans
 - [x] 04-01-PLAN.md — length-preserving decode + JSON/HTML decode paths + matrix widen to 140 cells [REF-04]
 - [x] 04-02-PLAN.md — tighten parse_run contract (&[u8; RUN_LEN]) + expand decoder error-pin [REF-03]
-- [ ] 04-03-PLAN.md — reader coverage — mmap + stdin + file-open-error integration tests [TEST-05]
+- [x] 04-03-PLAN.md — reader coverage — mmap + stdin + file-open-error integration tests [TEST-05]
 - [ ] 04-04-PLAN.md — TUI seam-extract + TestBackend save-path + persist XDG->HOME ladder [TEST-05]
 **Parallel-safe with**: Phase 5's fuzz + bench scaffolding (disjoint files; REF-03's new contract is exactly what TEST-02's fuzz target will consume, so Phase 5 can reference Phase 4's signature while scaffolding in parallel).
 
