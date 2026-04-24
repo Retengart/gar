@@ -138,6 +138,27 @@ impl Format {
     pub const ALL: &[Self] = &[Self::Ansi, Self::Plain, Self::Json, Self::Html];
 }
 
+/// Input format the `decode` subcommand expects. `Auto` sniffs the first
+/// non-empty line of input; the explicit values force a specific decoder.
+///
+/// `Ansi` and `Plain` share the same underlying text decoder — both
+/// values exist for UI symmetry with [`Format`] (Pitfall 10, D-06).
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, ValueEnum)]
+pub(crate) enum InputFormat {
+    /// Sniff the first non-empty line: `<!doctype|<html` → HTML,
+    /// `{"offset":` → JSON, otherwise the ansi/plain text decoder.
+    #[default]
+    Auto,
+    /// Force the ansi/plain text decoder (colour escapes tolerated).
+    Ansi,
+    /// Force the ansi/plain text decoder.
+    Plain,
+    /// Force the NDJSON decoder.
+    Json,
+    /// Force the HTML decoder.
+    Html,
+}
+
 /// View binary data as base-60 (sexagesimal) digit pairs in the
 /// Sumero-Babylonian positional notation.
 #[derive(Parser, Debug)]
@@ -265,6 +286,16 @@ pub(crate) struct AnalyzeArgs {
 pub(crate) struct DecodeArgs {
     /// Dump file to decode. If omitted, text is read from standard input.
     pub(crate) file: Option<PathBuf>,
+
+    /// Expected input format. `auto` (default) sniffs the first
+    /// non-empty line of input; explicit values force a specific decoder.
+    #[arg(
+        long,
+        value_enum,
+        default_value_t = InputFormat::Auto,
+        value_name = "MODE",
+    )]
+    pub(crate) input_format: InputFormat,
 }
 
 /// Arguments for `base60 completions`.
