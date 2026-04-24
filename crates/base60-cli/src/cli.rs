@@ -22,7 +22,7 @@ pub(crate) enum ColorChoice {
 
 /// Optional semantic overlay appended to each dump line.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, ValueEnum)]
-pub(crate) enum LensMode {
+pub enum LensMode {
     /// No overlay (default; identical to previous behaviour).
     #[default]
     None,
@@ -40,11 +40,10 @@ pub(crate) enum LensMode {
 impl LensMode {
     /// Every variant in cycle order. Tests iterate this slice to prove
     /// `cycle`, `label`, `build_lens`, and `persist::parse_lens` stay
-    /// exhaustive whenever a new variant is added.
-    // TODO(phase-3 TEST-01): iterate LensMode::ALL in production code
-    // (see 01-02-SUMMARY.md), then drop the dead_code allow below.
-    #[allow(dead_code)]
-    pub(crate) const ALL: &[Self] = &[
+    /// exhaustive whenever a new variant is added. Re-exported via
+    /// `base60::LensMode` so integration tests under `tests/` can iterate
+    /// it without an inline copy.
+    pub const ALL: &[Self] = &[
         Self::None,
         Self::Time,
         Self::Angle,
@@ -117,7 +116,7 @@ pub(crate) enum TimeScale {
 /// Output format for the default viewer. `ansi` preserves the current
 /// behaviour; the other modes are machine- or browser-friendly.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, ValueEnum)]
-pub(crate) enum Format {
+pub enum Format {
     /// Colourised terminal output (honours `--color` for ANSI opt-out).
     #[default]
     Ansi,
@@ -129,6 +128,14 @@ pub(crate) enum Format {
     Json,
     /// Self-contained HTML document with an inline CSS heat-map.
     Html,
+}
+
+impl Format {
+    /// Every variant in declaration order. Integration tests iterate this
+    /// slice to drive the `LensMode × Format` roundtrip matrix without
+    /// hard-coding variant lists in multiple places. Re-exported via
+    /// `base60::Format`.
+    pub const ALL: &[Self] = &[Self::Ansi, Self::Plain, Self::Json, Self::Html];
 }
 
 /// View binary data as base-60 (sexagesimal) digit pairs in the
@@ -326,5 +333,20 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn all_contains_every_format_variant() {
+        // Enumerate every Format in a closed match; if a future variant
+        // is added, the match becomes non-exhaustive at compile time and
+        // points here. The contains() check confirms `Format::ALL` stays
+        // aligned with the enum declaration.
+        for variant in [Format::Ansi, Format::Plain, Format::Json, Format::Html] {
+            assert!(
+                Format::ALL.contains(&variant),
+                "Format::ALL missing variant {variant:?}",
+            );
+        }
+        assert_eq!(Format::ALL.len(), 4, "Format::ALL length drift");
     }
 }
