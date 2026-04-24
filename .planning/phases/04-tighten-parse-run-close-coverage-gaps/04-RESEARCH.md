@@ -694,28 +694,29 @@ fn state_noops_when_both_unset() {
 
 **If this table is empty:** N/A — 10 assumptions. Most are Low risk; A2 and A5 are Medium and flagged for planner attention.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Should `persist::state_file` be re-exported via `lib.rs` for the TUI test to use, or should the test directory-scan?**
    - What we know: `state_file` is `pub(crate)`. Directory-scan works on one-test-one-fixture but is slightly brittle.
    - What's unclear: will Phase 5's fuzz targets need `state_file` too? (If yes, re-export now.)
-   - Recommendation: **directory-scan** (Example 8). Keeps library surface at `pub use cli::{Format, LensMode};` per Phase 3 D-07. Revisit if a future phase needs `state_file` publicly.
+   - RESOLVED: **directory-scan** (Example 8). Keeps library surface at `pub use cli::{Format, LensMode};` per Phase 3 D-07. Applied in Plan 04-04 Task 3. Revisit if a future phase needs `state_file` publicly.
 
 2. **Does the TUI seam-extract (Pitfall 4 suggestion) count as "scope creep" in Plan 04-04?**
    - What we know: the seam enables the test; without it, the test is impossible.
    - What's unclear: is adding a testable seam a refactor (would need its own plan) or a prerequisite (stays inside Plan 04-04)?
-   - Recommendation: **inside Plan 04-04**. The seam is the minimum viable change for TEST-05 SC3. Planner should call out the refactor in the plan description and verify the full D-24 gate stays green.
+   - RESOLVED: **inside Plan 04-04 Task 1**. The seam is the minimum viable change for TEST-05 SC3. Plan description calls out the refactor; D-24 gate must stay green.
 
 3. **What's the exact stderr-warning wording for the legacy-no-trailer fallback (D-03)?**
-   - Claude's Discretion per CONTEXT. Recommended: `"decode: no length metadata; assuming input was 8-byte-aligned. Last chunk may contain zero-padding. Regenerate the dump with base60 v2+ to silence this warning."`
-   - Decision deferred to planner, but test MUST assert on a substring of whatever wording ships.
+   - Claude's Discretion per CONTEXT.
+   - RESOLVED: planner pinned `"decode: no length metadata; assuming input was 8-byte-aligned. Last chunk may contain zero-padding. Regenerate the dump with base60 v2+ to silence this warning."` in Plan 04-01 Task 2; test asserts `contains("no length metadata")`.
 
 4. **Should the JSON meta-line check be a warning, an error, or silent?**
-   - CONTEXT says warning + continue (D-08 tolerance). Agree. Planner confirms in Plan 04-01.
+   - CONTEXT says warning + continue (D-08 tolerance).
+   - RESOLVED: warning + continue, per CONTEXT D-08. Plan 04-01 implements.
 
 5. **Is `--input-format=plain` distinct from `--input-format=ansi` for the decoder?**
    - What we know: ansi and plain share the SAME decode path (both are `NN:NN:…:NN` text; ANSI escapes are consumed by `find_digit_run`'s tolerance). Functionally identical.
-   - Recommendation: keep both values in the enum for UI consistency with `Format`, but dispatch to the same `decode_from_text` internal helper. Alternative: collapse into one `Text` variant. Planner's call — **keep distinct values for symmetry** with `Format::Ansi` / `Format::Plain`.
+   - RESOLVED: **keep both values distinct** for UI symmetry with `Format::Ansi` / `Format::Plain`; both dispatch to the same `decode_from_text` internal helper. Applied in Plan 04-01 `cli.rs` changes.
 
 ## Environment Availability
 
