@@ -32,6 +32,7 @@ assert_cmd = "2"
 base60-core = { path = "../base60-core" }
 predicates = "3"
 serial_test = { version = "3", default-features = false }
+tempfile = "3"
 
 [lints]
 workspace = true
