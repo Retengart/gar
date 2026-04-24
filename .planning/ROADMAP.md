@@ -58,7 +58,7 @@
 **Plans**: 3 plans
 - [x] 03-01-PLAN.md — thin `[lib]` target + `Format::ALL` dispatch table (prereq for matrix; widens `LensMode::ALL` to `pub`)
 - [x] 03-02-PLAN.md — 140-cell roundtrip matrix + `tests/common/mod.rs` + xtask spawn-discipline gate [TEST-01, TEST-03]
-- [ ] 03-03-PLAN.md — per-subcommand fixtures + CLI edges (stdin/BrokenPipe/color/clamps/decoder pin) [TEST-03]
+- [x] 03-03-PLAN.md — per-subcommand fixtures + CLI edges (stdin/BrokenPipe/color/clamps/decoder pin) [TEST-03]
 **Parallel-safe with**: Phase 5's bench scaffolding (disjoint new files under `benches/`).
 
 ### Phase 4: Tighten `parse_run` + Close Coverage Gaps
