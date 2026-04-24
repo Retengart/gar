@@ -127,6 +127,11 @@ pub(crate) fn dump_all<W: Write>(
         let offset = base_offset.saturating_add((idx * CHUNK) as u64);
         write_line(&mut out, offset, chunk, palette, lens)?;
     }
+    // REF-04 (D-01, D-04): length trailer. `#` prefix keeps
+    // `decode::find_digit_run` from matching this line — `#` is neither
+    // an ASCII digit nor a colon, so the scanner cannot construct a run
+    // that overlaps it. Always emitted, including for empty input (D-02).
+    writeln!(out, "# bytes=0x{:x}", data.len())?;
     out.flush()
 }
 
@@ -286,10 +291,42 @@ mod tests {
         let mut buf = Vec::new();
         dump_all(&data, 0x100, &mut buf, &PALETTE_NONE, None).unwrap();
         let rendered = String::from_utf8(buf).unwrap();
-        assert_eq!(rendered.lines().count(), 3);
+        // Three dump lines + one `# bytes=` trailer line.
+        assert_eq!(rendered.lines().count(), 4);
         assert!(rendered.starts_with("00000100  "));
         assert!(rendered.lines().nth(1).unwrap().starts_with("00000108  "));
         assert!(rendered.lines().nth(2).unwrap().starts_with("00000110  "));
+    }
+
+    #[test]
+    fn dump_all_emits_length_trailer_hex_on_plain() {
+        // 14 bytes = 0xe; short tail under 8-alignment exercises the
+        // non-multiple-of-8 path (D-02 always-emit invariant).
+        let data: Vec<u8> = (0..14).collect();
+        let mut buf = Vec::new();
+        dump_all(&data, 0, &mut buf, &PALETTE_NONE, None).unwrap();
+        let rendered = String::from_utf8(buf).unwrap();
+        assert!(
+            rendered.ends_with("# bytes=0xe\n"),
+            "trailer missing or wrong; tail: {:?}",
+            &rendered[rendered.len().saturating_sub(40)..]
+        );
+    }
+
+    #[test]
+    fn dump_all_emits_length_trailer_hex_on_ansi() {
+        let data: Vec<u8> = (0..14).collect();
+        let mut buf = Vec::new();
+        dump_all(&data, 0, &mut buf, &PALETTE_ANSI, None).unwrap();
+        let rendered = String::from_utf8(buf).unwrap();
+        assert!(rendered.contains("# bytes=0xe\n"));
+    }
+
+    #[test]
+    fn dump_all_emits_trailer_for_empty_input() {
+        let mut buf = Vec::new();
+        dump_all(b"", 0, &mut buf, &PALETTE_NONE, None).unwrap();
+        assert_eq!(String::from_utf8(buf).unwrap(), "# bytes=0x0\n");
     }
 
     #[test]
