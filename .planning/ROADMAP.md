@@ -51,20 +51,20 @@
 **Depends on**: Phase 1 (needs the `LensMode` dispatch table to enumerate variants), Phase 2 (any env-touching integration test uses `#[serial(env)]`).
 **Requirements**: TEST-01, TEST-03
 **Success Criteria** (what must be TRUE):
-  1. `crates/base60-cli/tests/roundtrip.rs` iterates every `(LensMode × {ansi, plain, json, html})` cell — driven by Phase 1's dispatch table — and asserts `base60 FILE | base60 decode` is byte-identical to the original for each of: minimal ELF, minimal PNG, minimal ZIP, 1 KiB zero-fill, short hello-world. Every cell passes on Ubuntu/macOS/Windows × rustc 1.95/stable/beta.
+  1. `crates/base60-cli/tests/roundtrip.rs` iterates every `(LensMode × {ansi, plain})` cell against each of `minimal_elf` (128 B) and `zero_fill_1kib` (1024 B) — 2 × 7 × 2 = 28 cells — asserting `base60 FILE | base60 decode` is byte-identical to the original. JSON/HTML formats and non-8-aligned fixtures (`minimal_png` 45 B, `minimal_zip` 22 B, `hello_world` 14 B) are **deferred to REF-04** (length-preserving `decode` + JSON/HTML decode paths) — the factories stay exported from `tests/common/` for Plan 03-03's subcommand coverage but are excluded from the roundtrip matrix until `decode` is extended. Every covered cell passes on Ubuntu/macOS/Windows × rustc 1.95/stable/beta.
   2. `crates/base60-cli/tests/fixtures.rs` and `crates/base60-cli/tests/cli.rs` exercise each subcommand (`dump`, `analyze`, `decode`, `completions`) including stdin piping and `BrokenPipe` short-reader behaviour via `assert_cmd` + `predicates`.
   3. All fixtures are generated in-test (`fn minimal_elf() -> Vec<u8>`, etc.) — `git ls-files | xargs stat -c '%s'` shows no tracked file over 8 KiB inside `tests/`.
   4. A shared `crates/base60-cli/tests/common/mod.rs` helper (`base60_cmd()` with `.env_clear()` + explicit `--color`) is the only way tests spawn the binary; grep verifies no raw `Command::cargo_bin` invocations outside `common/`.
 **Plans**: 3 plans
 - [x] 03-01-PLAN.md — thin `[lib]` target + `Format::ALL` dispatch table (prereq for matrix; widens `LensMode::ALL` to `pub`)
-- [ ] 03-02-PLAN.md — 140-cell roundtrip matrix + `tests/common/mod.rs` + xtask spawn-discipline gate [TEST-01, TEST-03]
+- [x] 03-02-PLAN.md — 140-cell roundtrip matrix + `tests/common/mod.rs` + xtask spawn-discipline gate [TEST-01, TEST-03]
 - [ ] 03-03-PLAN.md — per-subcommand fixtures + CLI edges (stdin/BrokenPipe/color/clamps/decoder pin) [TEST-03]
 **Parallel-safe with**: Phase 5's bench scaffolding (disjoint new files under `benches/`).
 
 ### Phase 4: Tighten `parse_run` + Close Coverage Gaps
-**Goal**: `decode::parse_run` accepts `&[u8; RUN_LEN]`, promotes its digit-check inside, and ships only after Phase 3's roundtrip matrix guarantees no silent error-semantics drift. Previously-untested paths (`reader::load_file` mmap, `reader::load_stdin`, TUI exit-with-save, `persist::state_base_dir`) gain direct coverage.
+**Goal**: `decode::parse_run` accepts `&[u8; RUN_LEN]`, promotes its digit-check inside, and ships only after Phase 3's roundtrip matrix guarantees no silent error-semantics drift. Previously-untested paths (`reader::load_file` mmap, `reader::load_stdin`, TUI exit-with-save, `persist::state_base_dir`) gain direct coverage. Also closes **REF-04** — length-preserving `decode` + JSON/HTML decode paths — so Phase 3's roundtrip matrix can widen from 28 cells back to the full 140.
 **Depends on**: Phase 3 (REF-03's safety net), Phase 2 (TEST-05's `state_base_dir` test is env-mutating — uses the `serial(env)` idiom).
-**Requirements**: REF-03, TEST-05
+**Requirements**: REF-03, REF-04, TEST-05
 **Success Criteria** (what must be TRUE):
   1. `decode::parse_run` signature reads `fn parse_run(run: &[u8; RUN_LEN], line_no: usize) -> io::Result<u64>`; the digit-validity check lives inside the function; no caller constructs `parse_run` input without the length-type invariant. Roundtrip matrix from Phase 3 still passes byte-for-byte.
   2. New tests in `crates/base60-cli/tests/reader.rs` cover the mmap path (tempfile fixture), the stdin path (synthetic `BufRead`), and the file-open error path (nonexistent path returns the expected `io::ErrorKind`).

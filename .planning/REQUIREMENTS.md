@@ -16,6 +16,7 @@ See `.planning/PROJECT.md` → Requirements → Validated. 23 shipped capabiliti
 - [ ] **REF-01**: De-duplicate `be_u64` into a single CLI-local module (`crates/base60-cli/src/chunk.rs`); `dump.rs` and `format.rs` import it. `base60-core` surface unchanged.
 - [ ] **REF-02**: Drive `LensMode` dispatch from one hand-rolled `const ALL: &[LensMode]` table in `cli.rs`. `build_lens` / `cycle` / `label` / `persist::parse_lens` all read from it. Adding a new variant touches one site.
 - [ ] **REF-03**: Tighten `decode::parse_run` contract — accept `&[u8; RUN_LEN]` (not `&str`), promote digit-check inside the function. No caller can bypass the digit-run gate.
+- [ ] **REF-04**: Length-preserving `decode` + JSON/HTML decode paths. Today `dump` zero-pads short tails to 8 bytes and `decode` always emits 8 bytes per run, so `base60 FILE | base60 decode` is **not** byte-identical for inputs whose length is not a multiple of 8; additionally `decode::find_digit_run` accepts only the `NN:NN:…:NN` (ansi/plain) shape, so JSON (`"digits":[…]`) and HTML (`<span class="sep">:</span>`) outputs cannot roundtrip. Add (a) additive `# length=N` metadata line (or equivalent) to `dump` so `decode` can truncate padding, (b) `decode_from_json` reading `"digits":` arrays, (c) `decode_from_html` stripping tags. Once shipped, restore the full `LensMode × {ansi, plain, json, html} × 5 fixtures = 140 cells` matrix in `tests/roundtrip.rs` (flip `ROUNDTRIP_FIXTURES` to `ALL_FIXTURES`, `ROUNDTRIP_FORMATS` to `Format::ALL`). JSON schema changes must stay additive per PROJECT.md Key Decisions. Discovered during Phase 3 Plan 03-02 execution.
 
 ### Test Infrastructure
 
@@ -85,6 +86,7 @@ Each v2 REQ-ID maps to exactly one phase in ROADMAP.md. No orphans, no duplicate
 | REF-01 | Phase 1 — Refactor Foundations | Pending |
 | REF-02 | Phase 1 — Refactor Foundations | Pending |
 | REF-03 | Phase 4 — Tighten parse_run + Close Coverage Gaps | Pending |
+| REF-04 | Phase 4 — Tighten parse_run + Close Coverage Gaps | Pending |
 | TEST-01 | Phase 3 — Roundtrip Matrix + Fixture Integration | Pending |
 | TEST-02 | Phase 5 — Fuzz + Criterion Harnesses | Pending |
 | TEST-03 | Phase 3 — Roundtrip Matrix + Fixture Integration | Pending |
@@ -100,15 +102,15 @@ Each v2 REQ-ID maps to exactly one phase in ROADMAP.md. No orphans, no duplicate
 | CI-03 | Phase 7 — CI Hardening | Pending |
 
 **Coverage:**
-- v2 requirements: 16 total
-- Mapped to phases: 16 ✓
+- v2 requirements: 17 total
+- Mapped to phases: 17 ✓
 - Unmapped: 0
 
 **Phase load:**
 - Phase 1: REF-01, REF-02 (2)
 - Phase 2: TEST-04 (1)
 - Phase 3: TEST-01, TEST-03 (2)
-- Phase 4: REF-03, TEST-05 (2)
+- Phase 4: REF-03, REF-04, TEST-05 (3)
 - Phase 5: TEST-02, PERF-06 (2)
 - Phase 6: PERF-01, PERF-02, PERF-03, PERF-04, PERF-05 (5)
 - Phase 7: CI-02, CI-03 (2)
