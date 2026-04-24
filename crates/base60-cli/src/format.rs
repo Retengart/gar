@@ -75,6 +75,10 @@ pub(crate) fn emit_json<W: Write>(
 
         out.write_all(b"}\n")?;
     }
+    // REF-04 (D-01, D-04). Decimal in JSON per convention; emitter stays
+    // hand-rolled so the shape matches this file's existing precedent
+    // (see the module docstring).
+    writeln!(out, r#"{{"type":"meta","bytes":{}}}"#, data.len())?;
     out.flush()
 }
 
@@ -124,6 +128,9 @@ pub(crate) fn emit_html<W: Write>(
         out.write_all(b"\n")?;
     }
 
+    // REF-04 (D-01, D-04). HTML uses hex (matches ansi/plain). Sits
+    // between `</pre>` and `</body></html>` — still valid HTML5 placement.
+    writeln!(out, "<!-- bytes=0x{:x} -->", data.len())?;
     out.write_all(HTML_EPILOGUE.as_bytes())?;
     out.flush()
 }
@@ -233,18 +240,29 @@ mod tests {
 
     #[test]
     fn json_empty_input_is_empty_output() {
-        assert!(json(&[], None).is_empty());
+        // REF-04 (D-02): the meta trailer is always emitted, even for
+        // empty input, so the "empty" case is exactly one line.
+        let out = json(&[], None);
+        assert_eq!(out, "{\"type\":\"meta\",\"bytes\":0}\n");
     }
 
     #[test]
     fn json_emits_one_object_per_chunk() {
         let data: Vec<u8> = (0..24).collect();
         let out = json(&data, None);
-        assert_eq!(out.lines().count(), 3);
+        // 3 chunk lines + 1 trailing meta line.
+        assert_eq!(out.lines().count(), 4);
         for line in out.lines() {
             assert!(line.starts_with('{'));
             assert!(line.ends_with('}'));
         }
+    }
+
+    #[test]
+    fn json_emits_meta_line_at_end() {
+        let out = json(b"hello", None);
+        let last = out.lines().last().unwrap();
+        assert_eq!(last, r#"{"type":"meta","bytes":5}"#);
     }
 
     #[test]
@@ -298,6 +316,18 @@ mod tests {
         let out = html(&[0_u8; 8], None);
         assert!(out.starts_with("<!doctype html>"));
         assert!(out.contains("<pre>"));
+        // REF-04: trailer comment sits between `</pre>` and the epilogue.
+        assert!(out.contains("<!-- bytes=0x8 -->\n"));
+        assert!(out.ends_with("</pre></body></html>\n"));
+    }
+
+    #[test]
+    fn html_document_includes_length_comment() {
+        let out = html(b"hello", None);
+        assert!(
+            out.contains("<!-- bytes=0x5 -->\n"),
+            "length comment missing; html was: {out}",
+        );
         assert!(out.ends_with("</pre></body></html>\n"));
     }
 

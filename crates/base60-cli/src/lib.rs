@@ -127,15 +127,16 @@ fn run_analyze(args: &AnalyzeArgs) -> Result<()> {
 fn run_decode(args: &DecodeArgs) -> Result<()> {
     // Decode reads text line-by-line; it doesn't benefit from mmap
     // (dump files are tiny compared to their source), so we lean on
-    // `BufRead` straight from file or stdin.
+    // `BufRead` straight from file or stdin. `args.input_format` is
+    // threaded through as the third parameter (REF-04 D-06).
     let stdout = stdout();
     let mut out = BufWriter::new(stdout.lock());
     let result = if let Some(path) = args.file.as_deref() {
         let file = File::open(path)?;
-        decode::decode_stream(BufReader::new(file), &mut out)
+        decode::decode_stream(BufReader::new(file), &mut out, args.input_format)
     } else {
         let stdin = std::io::stdin();
-        decode::decode_stream(stdin.lock(), &mut out)
+        decode::decode_stream(stdin.lock(), &mut out, args.input_format)
     };
     match result {
         Ok(()) => Ok(()),
