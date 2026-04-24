@@ -8,7 +8,10 @@ pub(crate) const CHUNK: usize = 8;
 
 /// Right-pad a short byte slice to a full [`CHUNK`]-wide array with zero bytes.
 ///
-/// `bytes.len()` must be in `1..=CHUNK`; longer slices are a programmer error.
+/// `bytes.len()` must be in `1..=CHUNK`; longer slices are a programmer
+/// error. Callers that slice out of `data.chunks(CHUNK)` are always safe;
+/// a zero-length slice at this boundary indicates a bug in the caller,
+/// not in the input data.
 #[inline]
 #[must_use]
 pub(crate) fn pad_chunk(bytes: &[u8]) -> [u8; CHUNK] {
