@@ -28,6 +28,9 @@ ratatui = "0.30.0"
 base60-core = { path = "../base60-core" }
 
 [dev-dependencies]
+assert_cmd = "2"
+base60-core = { path = "../base60-core" }
+predicates = "3"
 serial_test = { version = "3", default-features = false }
 
 [lints]
