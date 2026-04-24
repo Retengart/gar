@@ -35,6 +35,9 @@
   "project_code": null,
   "phase_naming": "sequential",
   "agent_skills": {},
+  "model_overrides": {
+    "gsd-executor": "claude-opus-4-7[1m]"
+  },
   "features": {},
   "resolve_model_ids": "omit",
   "mode": "yolo",
