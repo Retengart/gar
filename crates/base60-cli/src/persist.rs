@@ -136,7 +136,12 @@ fn parse(raw: &str) -> Option<PersistedState> {
     if saw_cursor_key { Some(st) } else { None }
 }
 
-fn parse_lens(val: &str) -> LensMode {
+/// Parse a lens-mode label from persisted state back into a [`LensMode`].
+///
+/// Unknown labels (including `LensMode::None`'s `"—"` display label)
+/// fall back to [`LensMode::None`], so state files from older binaries
+/// never break the TUI.
+pub(crate) fn parse_lens(val: &str) -> LensMode {
     match val {
         "time" => LensMode::Time,
         "angle" => LensMode::Angle,
