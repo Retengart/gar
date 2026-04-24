@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
+status: ready_to_plan
 last_updated: "2026-04-24T11:38:20.694Z"
 progress:
   total_phases: 7
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 8
   completed_plans: 5
-  percent: 63
+  percent: 43
 ---
 
 # Project State — base60 v2
@@ -27,9 +27,9 @@ progress:
 Phase: 03 (Roundtrip Matrix + Fixture Integration) — EXECUTING
 Plan: 1 of 3
 **Milestone:** v2 hardening
-**Phase:** 3
+**Phase:** 4
 **Plan:** Not started
-**Status:** Executing Phase 03
+**Status:** Ready to plan
 **Progress:** 0 / 7 phases complete
 
 ```
