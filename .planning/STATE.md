@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
+status: ready_to_plan
 last_updated: "2026-04-24T15:37:57.229Z"
 progress:
   total_phases: 7
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 12
   completed_plans: 8
-  percent: 67
+  percent: 57
 ---
 
 # Project State — base60 v2
@@ -27,9 +27,9 @@ progress:
 Phase: 04 (Tighten parse_run + Close Coverage Gaps) — EXECUTING
 Plan: 1 of 4
 **Milestone:** v2 hardening
-**Phase:** 4
+**Phase:** 5
 **Plan:** Not started
-**Status:** Executing Phase 04
+**Status:** Ready to plan
 **Progress:** 0 / 7 phases complete
 
 ```
