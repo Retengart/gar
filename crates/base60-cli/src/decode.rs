@@ -601,6 +601,39 @@ mod tests {
         assert_eq!(out, vec![0_u8, 0, 0, 0, 0, 0, 0, 1]);
     }
 
+    // ---------- REF-03 (Plan 04-02) additions ----------
+
+    /// Directly exercises the internal non-digit guard that [`parse_run`]
+    /// owns after Plan 04-02 (D-09). `find_digit_run` normally pre-filters
+    /// non-ASCII-digit bytes, so this is belt-and-braces coverage of the
+    /// defensive error path inside `parse_run` itself.
+    #[test]
+    fn parse_run_flags_non_digit_byte_at_pair_position() {
+        let mut run = *b"00:00:00:00:00:00:00:00:00:00:00";
+        // Clobber the second pair's high byte with a non-digit.
+        run[3] = b'X';
+        let err = parse_run(&run, 1).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+        assert!(
+            err.to_string().contains("non-digit byte at pair 2"),
+            "unexpected message: {err}",
+        );
+    }
+
+    /// Direct invocation of `parse_run` on an array-sized run of `99`
+    /// pairs — first pair triggers the `digit >= 60` branch; wording must
+    /// match the format string pinned by `tests/cli.rs` (D-10).
+    #[test]
+    fn parse_run_reports_invalid_digit_at_first_pair() {
+        let run = *b"99:00:00:00:00:00:00:00:00:00:00";
+        let err = parse_run(&run, 7).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+        assert_eq!(
+            err.to_string(),
+            "line 7: invalid base-60 digit 99 at pair 1",
+        );
+    }
+
     #[test]
     fn trailer_hex_parser_accepts_various_widths() {
         assert_eq!(parse_trailer_hex("# bytes=0x0"), Some(0));
