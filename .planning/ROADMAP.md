@@ -87,7 +87,9 @@
   3. `crates/base60-core/benches/{convert,lens}.rs` and `crates/base60-cli/benches/{dump,decode,search}.rs` exist, each declared `harness = false`, configured with `Criterion::default().noise_threshold(0.05)`. `cargo bench --workspace --no-run --locked` compiles every bench on all three OSes.
   4. `crates/base60-cli/benches/README.md` documents advisory-only posture: benches run locally with `--save-baseline`, numbers pasted into PR descriptions, CI never gates on them.
   5. `#[cfg(fuzzing)] pub` hatch for `decode::parse_run` and `search::Pattern` is verified: non-fuzzing `cargo check --workspace` leaves the public API surface unchanged (`cargo public-api` or equivalent manual diff confirms no new `pub` item in `base60-core` or `base60-cli` outside the fuzz-gated hatch).
-**Plans**: TBD
+**Plans**: 2 plans
+- [ ] 05-01-PLAN.md — fuzz crate scaffolding with parse_run + pattern_from_str targets + `__fuzz` hatch + `parse_run`/`RUN_LEN` pub(crate) bump [TEST-02]
+- [ ] 05-02-PLAN.md — criterion bench scaffolding (2 core + 3 cli benches) + `__bench` shim + advisory-only README [PERF-06]
 **Parallel-safe with**: Phase 3 (disjoint files — Phase 3 touches `tests/`, Phase 5 touches `fuzz/` and `benches/`). Phase 5 can also be parallelised with Phase 4 once Phase 1 + Phase 3 have merged.
 
 ### Phase 6: Streaming + Performance Pass
@@ -166,7 +168,7 @@ Phase 2 ──> Phase 3 / Phase 4 (provides #[serial(env)] idiom)
 | 2. Env-Test Serialisation | 0 / TBD | Not started | — |
 | 3. Roundtrip Matrix + Fixture Integration | 0 / TBD | Not started | — |
 | 4. Tighten parse_run + Close Coverage Gaps | 0 / TBD | Not started | — |
-| 5. Fuzz + Criterion Harnesses | 0 / TBD | Not started | — |
+| 5. Fuzz + Criterion Harnesses | 0 / 2 | Planned | — |
 | 6. Streaming + Performance Pass | 0 / TBD | Not started | — |
 | 7. CI Hardening | 0 / TBD | Not started | — |
 
