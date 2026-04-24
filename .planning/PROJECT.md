@@ -44,6 +44,11 @@ lossless.
 - ✓ **WS-01**: Workspace split — `base60-core` (zero-dep library) + `base60-cli` (binary) — v1
 - ✓ **CI-01**: GitHub Actions — fmt / clippy (pedantic+nursery+cargo) / doc / test across Ubuntu/macOS/Windows × rustc 1.95/stable/beta — v1
 
+<!-- v2 Phase 1: Refactor Foundations (2026-04-24). -->
+
+- ✓ **REF-01**: Single source of truth for chunk decoding — CLI-local `crates/base60-cli/src/chunk.rs` module; `dump.rs`/`format.rs`/`tui.rs` all import `{CHUNK, be_u64, pad_chunk}` from it — Phase 1
+- ✓ **REF-02**: `LensMode::ALL` single-source dispatch table — `pub(crate) const ALL: &[Self]` in `cli.rs` + 2 exhaustiveness tests (`all_contains_every_variant_in_cycle_order`, `all_methods_total_over_all`) covering `cycle`/`label`/`build_lens`/`persist::parse_lens` — Phase 1
+
 ### Active
 
 <!-- v2 hardening milestone — no new user-facing features; focus on correctness, performance, and maintainability. -->
@@ -59,8 +64,6 @@ lossless.
 - [ ] **PERF-04**: Streaming `Lens::render_to<W>` default method — skip per-line `String` allocation
 - [ ] **PERF-05**: Streaming entropy-window sparkline — online accumulation, no `Vec<f32>` materialisation
 - [ ] **PERF-06**: `criterion` benchmarks gating each perf change (guardrail, not user feature)
-- [ ] **REF-01**: Promote `be_u64` into `base60-core` — one source of truth for chunk decoding
-- [ ] **REF-02**: Drive `LensMode` dispatch from a single table (`strum::EnumIter` or equivalent)
 - [ ] **REF-03**: Tighten `decode::parse_run` contract — take `&[u8; RUN_LEN]`, promote digit-check inside
 
 ### Out of Scope
@@ -150,4 +153,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-23 after initialization*
+*Last updated: 2026-04-24 after Phase 1 (Refactor Foundations) completion*
