@@ -27,3 +27,16 @@ pub(crate) fn pad_chunk(bytes: &[u8]) -> [u8; CHUNK] {
 pub(crate) const fn be_u64(bytes: [u8; CHUNK]) -> u64 {
     u64::from_be_bytes(bytes)
 }
+
+/// Right-pad and decode a byte slice as a big-endian [`u64`] in one step.
+///
+/// Combines [`pad_chunk`] + [`be_u64`] — the most common hot-path pattern
+/// across renderers. Returns `(chunk_be, digits)` so callers get both
+/// the raw `u64` and the pre-computed base-60 digit array.
+#[inline]
+#[must_use]
+pub(crate) fn prepare(bytes: &[u8]) -> (u64, [u8; base60_core::convert::DIGITS]) {
+    let chunk_be = be_u64(pad_chunk(bytes));
+    let digits = base60_core::convert::u64_to_base60(chunk_be);
+    (chunk_be, digits)
+}

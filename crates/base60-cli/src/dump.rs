@@ -7,12 +7,12 @@
 //! * [`styled_line`] — returns a ratatui [`Line`] with per-token [`Span`]s
 //!   for the interactive viewer.
 
-use crate::chunk::{CHUNK, be_u64, pad_chunk};
+use crate::chunk::{CHUNK, prepare};
 use crate::color::{
     self, Palette, delim_style, digit_style, dot_style, lens_style, offset_style, printable_style,
     sep_style,
 };
-use base60_core::convert::{DIGITS, u64_to_base60};
+use base60_core::convert::DIGITS;
 use base60_core::lens::Lens;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -46,9 +46,7 @@ pub(crate) fn write_line<W: Write>(
     lens: Option<&dyn Lens>,
 ) -> io::Result<()> {
     debug_assert!(bytes.len() <= CHUNK);
-    let chunk_be = be_u64(pad_chunk(bytes));
-    let digits = u64_to_base60(chunk_be);
-
+    let (chunk_be, digits) = prepare(bytes);
     // Offset column.
     w.write_all(palette.offset.as_bytes())?;
     write!(w, "{offset:0OFFSET_WIDTH$x}")?;
@@ -237,8 +235,7 @@ pub(crate) fn styled_line(
     cursor_in_line: Option<usize>,
 ) -> Line<'static> {
     debug_assert!(bytes.len() <= CHUNK);
-    let chunk_be = be_u64(pad_chunk(bytes));
-    let digits = u64_to_base60(chunk_be);
+    let (chunk_be, digits) = prepare(bytes);
 
     // 1 offset + 1 gap + (DIGITS digit spans + DIGITS-1 separator spans)
     // + 1 gap + 1 opening delim + CHUNK ascii spans + 1 closing delim
