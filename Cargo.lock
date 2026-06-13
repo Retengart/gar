@@ -129,6 +129,7 @@ dependencies = [
  "clap_complete",
  "criterion",
  "crossterm",
+ "memchr",
  "memmap2",
  "predicates",
  "ratatui",

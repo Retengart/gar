@@ -125,7 +125,7 @@ fn shannon_entropy(hist: &[u32; 256], total: usize) -> f32 {
             continue;
         }
         let p = f64::from(c) / t;
-        h -= p * p.log2();
+        h = p.mul_add(-p.log2(), h);
     }
     // Truncating to f32 for storage; the value is bounded in [0, 8] so
     // only the mantissa shrinks, never the exponent.

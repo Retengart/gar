@@ -35,6 +35,20 @@ pub enum TimeScale {
 pub trait Lens: Send + Sync {
     /// Render the overlay for a chunk already parsed as big-endian `u64`.
     fn render(&self, chunk: u64) -> String;
+
+    /// Write the overlay directly to `w`, avoiding the intermediate
+    /// [`String`] allocation that [`render`](Self::render) returns.
+    ///
+    /// The default implementation delegates to [`render`](Self::render);
+    /// implementors that can stream UTF-8 bytes without allocation
+    /// should override this.
+    ///
+    /// # Errors
+    ///
+    /// Returns any error produced by the underlying writer.
+    fn render_to(&self, chunk: u64, w: &mut dyn std::io::Write) -> std::io::Result<()> {
+        w.write_all(self.render(chunk).as_bytes())
+    }
 }
 
 // -- Time ------------------------------------------------------------------
@@ -147,6 +161,30 @@ impl Lens for TabletLens {
         s.push('¬');
         s
     }
+
+    fn render_to(&self, chunk: u64, w: &mut dyn std::io::Write) -> std::io::Result<()> {
+        let digits = u64_to_base60(chunk);
+        w.write_all(b"\xe2\x8c\x90 ")?; // `⌐ `
+        let mut leading = true;
+        for (i, &d) in digits.iter().enumerate() {
+            if i > 0 {
+                w.write_all(b":")?;
+            }
+            let last = i == DIGITS - 1;
+            if leading && d == 0 && !last {
+                if self.purist {
+                    w.write_all(b"  ")?;
+                } else {
+                    w.write_all(b"00")?;
+                }
+            } else {
+                leading = false;
+                let [hi, lo] = cuneiform::ascii_pair(d);
+                w.write_all(&[hi, lo])?;
+            }
+        }
+        w.write_all(b" \xc2\xac") // ` ¬`
+    }
 }
 
 // -- Cuneiform -------------------------------------------------------------
@@ -199,6 +237,27 @@ impl Lens for CuneiformLens {
             }
             s
         }
+    }
+
+    fn render_to(&self, chunk: u64, w: &mut dyn std::io::Write) -> std::io::Result<()> {
+        let digits = u64_to_base60(chunk);
+        if self.fallback {
+            for (i, &d) in digits.iter().enumerate() {
+                if i > 0 {
+                    w.write_all(b":")?;
+                }
+                let [hi, lo] = cuneiform::ascii_pair(d);
+                w.write_all(&[hi, lo])?;
+            }
+        } else {
+            for (i, &d) in digits.iter().enumerate() {
+                if i > 0 {
+                    w.write_all(b" ")?;
+                }
+                w.write_all(cuneiform::glyph(d).as_bytes())?;
+            }
+        }
+        Ok(())
     }
 }
 

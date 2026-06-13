@@ -121,19 +121,11 @@ pub fn find_all(haystack: &[u8], needle: &[u8]) -> Vec<usize> {
     if needle.is_empty() || needle.len() > haystack.len() {
         return Vec::new();
     }
-    let mut out = Vec::new();
-    let mut i = 0;
-    while i + needle.len() <= haystack.len() {
-        if &haystack[i..i + needle.len()] == needle {
-            out.push(i);
-            // Non-overlapping — advance past this match so `aaaa` searched
-            // for `aa` gives `[0, 2]` instead of `[0, 1, 2]`.
-            i += needle.len();
-        } else {
-            i += 1;
-        }
+    if needle.len() == 1 {
+        memchr::memchr_iter(needle[0], haystack).collect()
+    } else {
+        memchr::memmem::find_iter(haystack, needle).collect()
     }
-    out
 }
 
 #[cfg(test)]

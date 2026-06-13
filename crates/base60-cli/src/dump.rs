@@ -100,7 +100,7 @@ pub(crate) fn write_line<W: Write>(
     if let Some(lens) = lens {
         w.write_all(b"  ")?;
         w.write_all(palette.lens.as_bytes())?;
-        w.write_all(lens.render(chunk_be).as_bytes())?;
+        lens.render_to(chunk_be, w)?;
         w.write_all(palette.reset.as_bytes())?;
     }
 
