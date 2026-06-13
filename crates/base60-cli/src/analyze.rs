@@ -38,6 +38,8 @@ pub(crate) const DEFAULT_WINDOW: usize = 256;
 /// the `7.9..=8.0` range for 8-bit samples; `7.5` admits slight skew.
 const HIGH_ENTROPY: f32 = 7.5;
 
+use crate::chunk::is_printable;
+
 /// Threshold below which a window is classified as low-entropy
 /// ("likely padding or zero fill"). A window of a single repeated byte
 /// has entropy `0`; `1.0` admits a handful of distinct bytes.
@@ -247,11 +249,6 @@ fn detect_ascii_regions(data: &[u8], regions: &mut Vec<Region>) {
             kind: RegionKind::Ascii,
         });
     }
-}
-
-#[inline]
-const fn is_printable(b: u8) -> bool {
-    b.is_ascii_graphic() || b == b' '
 }
 
 /// Write a human-readable summary of `a` to `w`, using `data` for the

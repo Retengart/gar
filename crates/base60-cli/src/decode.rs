@@ -40,6 +40,7 @@
 //! multiple of 8 bytes. Legacy dumps without the trailer still decode,
 //! with a single stderr warning emitted at EOF (D-03).
 
+use crate::chunk::CHUNK;
 use crate::cli::InputFormat;
 use base60_core::convert::DIGITS;
 use std::io::{self, BufRead, Read, Write};
@@ -55,8 +56,6 @@ const PAIR: usize = 2;
 /// (Phase 5 TEST-02 SC5).
 #[allow(unreachable_pub)]
 pub const RUN_LEN: usize = PAIR * DIGITS + (DIGITS - 1);
-/// Bytes produced per decoded run (one `u64` → 8 big-endian bytes).
-const CHUNK_BYTES: usize = 8;
 
 /// Sniffed format from the first non-empty line. Internal-only.
 #[derive(Copy, Clone, Debug)]
@@ -156,7 +155,7 @@ fn sniff(first_line: &str) -> SniffedFormat {
 /// shorter than the emitted 8-byte-aligned output.
 fn decode_from_text<R: BufRead, W: Write>(r: R, w: &mut W) -> io::Result<()> {
     let mut trailer: Option<usize> = None;
-    let mut buffered_last: Option<[u8; CHUNK_BYTES]> = None;
+    let mut buffered_last: Option<[u8; CHUNK]> = None;
     let mut written: usize = 0;
     let mut any_chunk_seen = false;
 
@@ -177,7 +176,7 @@ fn decode_from_text<R: BufRead, W: Write>(r: R, w: &mut W) -> io::Result<()> {
 
         if let Some(prev) = buffered_last.take() {
             w.write_all(&prev)?;
-            written += CHUNK_BYTES;
+            written += CHUNK;
         }
         buffered_last = Some(bytes);
         any_chunk_seen = true;
@@ -187,7 +186,7 @@ fn decode_from_text<R: BufRead, W: Write>(r: R, w: &mut W) -> io::Result<()> {
     if let Some(last) = buffered_last {
         match trailer {
             Some(total) if total > written => {
-                let tail = (total - written).min(CHUNK_BYTES);
+                let tail = (total - written).min(CHUNK);
                 w.write_all(&last[..tail])?;
             }
             Some(_) => {
@@ -329,7 +328,7 @@ fn decode_from_html<R: BufRead, W: Write>(mut r: R, w: &mut W) -> io::Result<()>
 
     // Every 11 pairs = one 8-byte chunk. Incomplete trailing rows drop.
     let mut written: usize = 0;
-    let mut buffered_last: Option<[u8; CHUNK_BYTES]> = None;
+    let mut buffered_last: Option<[u8; CHUNK]> = None;
     for row in pairs.chunks_exact(DIGITS) {
         let mut run = [0_u8; RUN_LEN];
         for (i, &d) in row.iter().enumerate() {
@@ -345,14 +344,14 @@ fn decode_from_html<R: BufRead, W: Write>(mut r: R, w: &mut W) -> io::Result<()>
         let bytes = value.to_be_bytes();
         if let Some(prev) = buffered_last.take() {
             w.write_all(&prev)?;
-            written += CHUNK_BYTES;
+            written += CHUNK;
         }
         buffered_last = Some(bytes);
     }
     if let Some(last) = buffered_last {
         match trailer {
             Some(total) if total > written => {
-                let tail = (total - written).min(CHUNK_BYTES);
+                let tail = (total - written).min(CHUNK);
                 w.write_all(&last[..tail])?;
             }
             Some(_) => {}

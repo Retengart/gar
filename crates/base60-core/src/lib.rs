@@ -23,7 +23,7 @@ pub mod cuneiform;
 pub mod lens;
 pub mod url;
 
-pub use convert::{DIGITS, u64_to_base60};
+pub use convert::{ASCII_STR, DIGIT_PAIRS_STR, DIGITS, u64_to_base60};
 pub use cuneiform::{ascii_fallback_forced, ascii_pair, glyph};
 pub use lens::{AngleLens, CuneiformLens, Lens, TabletLens, TimeLens, TimeScale};
 pub use url::{DecodeError, decode_u64, encode_u64};

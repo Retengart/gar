@@ -22,6 +22,53 @@ pub const DIGIT_PAIRS: [[u8; 2]; 60] = {
     table
 };
 
+/// Pre-computed two-character `&str` slices for base-60 digits `00..59`.
+///
+/// `DIGIT_PAIRS_STR[d]` is `"00"`, `"01"`, … `"59"` — ready for direct
+/// use in ratatui `Span`s without per-row `format!` allocations.
+pub static DIGIT_PAIRS_STR: [&str; 60] = {
+    let mut table: [&str; 60] = [""; 60];
+    let mut d: u8 = 0;
+    while d < 60 {
+        // SAFETY: every entry is two ASCII decimal digits, which is valid UTF-8.
+        table[d as usize] = match core::str::from_utf8(&DIGIT_PAIRS[d as usize]) {
+            Ok(s) => s,
+            Err(_) => unreachable!(),
+        };
+        d += 1;
+    }
+    table
+};
+
+/// Backing byte arrays for [`ASCII_STR`], one byte per printable ASCII char.
+const ASCII_BYTES: [[u8; 1]; 95] = {
+    let mut table = [[0u8; 1]; 95];
+    let mut i: u8 = 0;
+    while i < 95 {
+        table[i as usize] = [0x20 + i];
+        i += 1;
+    }
+    table
+};
+
+/// Pre-computed single-character `&str` slices for printable ASCII bytes
+/// (`0x20..=0x7E`, 95 entries).
+///
+/// Index with `b - 0x20` to obtain the `&str` for byte `b`. Non-printable
+/// bytes should use a fallback (typically `"."`).
+pub static ASCII_STR: [&str; 95] = {
+    let mut table: [&str; 95] = [""; 95];
+    let mut i: u8 = 0;
+    while i < 95 {
+        table[i as usize] = match core::str::from_utf8(&ASCII_BYTES[i as usize]) {
+            Ok(s) => s,
+            Err(_) => unreachable!(),
+        };
+        i += 1;
+    }
+    table
+};
+
 /// Convert `n` into its base-60 digits, most-significant first.
 ///
 /// Index `0` holds the highest-order digit; index `DIGITS - 1` holds the

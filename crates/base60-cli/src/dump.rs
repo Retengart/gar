@@ -7,16 +7,16 @@
 //! * [`styled_line`] — returns a ratatui [`Line`] with per-token [`Span`]s
 //!   for the interactive viewer.
 
-use crate::chunk::{CHUNK, prepare};
+use crate::chunk::{CHUNK, clamp_filled, is_printable, prepare, read_chunk, skip_bytes};
 use crate::color::{
     self, Palette, delim_style, digit_style, dot_style, lens_style, offset_style, printable_style,
     sep_style,
 };
-use base60_core::convert::{DIGIT_PAIRS, DIGITS};
+use base60_core::convert::{ASCII_STR, DIGIT_PAIRS, DIGIT_PAIRS_STR, DIGITS};
 use base60_core::lens::Lens;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use std::io::{self, BufRead, BufReader, BufWriter, Read, Write};
+use std::io::{self, BufReader, BufWriter, Read, Write};
 
 /// Width of the zero-padded hex offset column.
 const OFFSET_WIDTH: usize = 8;
@@ -73,7 +73,7 @@ pub(crate) fn write_line<W: Write>(
     w.write_all(palette.reset.as_bytes())?;
 
     for &src in bytes {
-        let printable = src.is_ascii_graphic() || src == b' ';
+        let printable = is_printable(src);
         w.write_all(
             if printable {
                 palette.printable
@@ -166,19 +166,7 @@ pub(crate) fn dump_reader<R: Read, W: Write>(
     let mut reader = BufReader::new(reader);
     let mut out = BufWriter::new(w);
 
-    // Discard `skip` bytes from the start.
-    let mut to_skip = skip;
-    while to_skip > 0 {
-        let buf = reader.fill_buf()?;
-        if buf.is_empty() {
-            break;
-        }
-        let consume = usize::try_from(to_skip)
-            .unwrap_or(usize::MAX)
-            .min(buf.len());
-        reader.consume(consume);
-        to_skip -= consume as u64;
-    }
+    skip_bytes(&mut reader, skip)?;
 
     let mut offset = skip;
     let mut total: u64 = 0;
@@ -190,28 +178,14 @@ pub(crate) fn dump_reader<R: Read, W: Write>(
             break;
         }
 
-        let mut filled = 0;
-        while filled < CHUNK {
-            match reader.read(&mut chunk_buf[filled..]) {
-                Ok(0) => break,
-                Ok(n) => filled += n,
-                Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
-                Err(e) => return Err(e),
-            }
-        }
-
+        let filled = read_chunk(&mut reader, &mut chunk_buf)?;
         if filled == 0 {
             break;
         }
 
-        if let Some(rem) = remaining.as_mut() {
-            let actual = filled.min(usize::try_from(*rem).unwrap_or(usize::MAX));
-            filled = actual;
-            *rem -= actual as u64;
-        }
-
-        total += filled as u64;
-        write_line(&mut out, offset, &chunk_buf[..filled], palette, lens)?;
+        let actual = clamp_filled(filled, &mut remaining);
+        total += actual as u64;
+        write_line(&mut out, offset, &chunk_buf[..actual], palette, lens)?;
         offset = offset.saturating_add(CHUNK as u64);
     }
 
@@ -251,7 +225,7 @@ pub(crate) fn styled_line(
         if i > 0 {
             spans.push(Span::styled(":", sep));
         }
-        spans.push(Span::styled(format!("{d:02}"), digit_style(d)));
+        spans.push(Span::styled(DIGIT_PAIRS_STR[d as usize], digit_style(d)));
     }
 
     spans.push(Span::raw("  "));
@@ -260,11 +234,7 @@ pub(crate) fn styled_line(
     let print = printable_style();
     let dot = dot_style();
     for (i, &src) in bytes.iter().enumerate() {
-        let base = if src.is_ascii_graphic() || src == b' ' {
-            print
-        } else {
-            dot
-        };
+        let base = if is_printable(src) { print } else { dot };
         // Reverse-video the exact cursor byte so the viewer can see where
         // hjkl motion lands without needing a second colour scheme.
         let style = if cursor_in_line == Some(i) {
@@ -272,13 +242,12 @@ pub(crate) fn styled_line(
         } else {
             base
         };
-        let ch = if src.is_ascii_graphic() || src == b' ' {
-            // `src` is ASCII, so this `char` cast is exact.
-            src as char
+        let text: &'static str = if is_printable(src) {
+            ASCII_STR[(src - 0x20) as usize]
         } else {
-            '.'
+            "."
         };
-        spans.push(Span::styled(String::from(ch), style));
+        spans.push(Span::styled(text, style));
     }
     spans.push(Span::styled("|", delim));
 

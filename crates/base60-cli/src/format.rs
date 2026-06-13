@@ -14,9 +14,9 @@
 //! it without a companion library. HTML output mirrors the terminal's
 //! Sumerian heat-map palette via inline CSS classes.
 
-use crate::chunk::{CHUNK, prepare};
+use crate::chunk::{CHUNK, clamp_filled, is_printable, prepare, read_chunk, skip_bytes};
 use base60_core::lens::Lens;
-use std::io::{self, BufRead, BufReader, BufWriter, Read, Write};
+use std::io::{self, BufReader, BufWriter, Read, Write};
 
 /// Emit newline-delimited JSON (ndjson): one object per dump line.
 ///
@@ -106,7 +106,7 @@ pub(crate) fn emit_html<W: Write>(
 
         out.write_all(b"  <span class=\"delim\">|</span>")?;
         for &b in chunk {
-            if b.is_ascii_graphic() || b == b' ' {
+            if is_printable(b) {
                 out.write_all(b"<span class=\"print\">")?;
                 write_html_char(&mut out, b as char)?;
                 out.write_all(b"</span>")?;
@@ -267,7 +267,7 @@ pub(crate) fn emit_html_stream<R: Read, W: Write>(
 
         out.write_all(b"  <span class=\"delim\">|</span>")?;
         for &b in chunk {
-            if b.is_ascii_graphic() || b == b' ' {
+            if is_printable(b) {
                 out.write_all(b"<span class=\"print\">")?;
                 write_html_char(&mut out, b as char)?;
                 out.write_all(b"</span>")?;
@@ -290,43 +290,6 @@ pub(crate) fn emit_html_stream<R: Read, W: Write>(
     writeln!(out, "<!-- bytes=0x{total:x} -->")?;
     out.write_all(HTML_EPILOGUE.as_bytes())?;
     out.flush()
-}
-
-/// Discard `n` bytes from the reader using buffered reads.
-fn skip_bytes(reader: &mut BufReader<impl Read>, mut n: u64) -> io::Result<()> {
-    while n > 0 {
-        let buf = reader.fill_buf()?;
-        if buf.is_empty() {
-            break;
-        }
-        let consume = usize::try_from(n).unwrap_or(usize::MAX).min(buf.len());
-        reader.consume(consume);
-        n -= consume as u64;
-    }
-    Ok(())
-}
-
-/// Read up to `CHUNK` bytes, returning how many were filled.
-fn read_chunk(reader: &mut BufReader<impl Read>, buf: &mut [u8; CHUNK]) -> io::Result<usize> {
-    let mut filled = 0;
-    while filled < CHUNK {
-        match reader.read(&mut buf[filled..]) {
-            Ok(0) => break,
-            Ok(n) => filled += n,
-            Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
-            Err(e) => return Err(e),
-        }
-    }
-    Ok(filled)
-}
-
-/// Clamp `filled` against the `remaining` budget, updating it in place.
-fn clamp_filled(filled: usize, remaining: &mut Option<u64>) -> usize {
-    remaining.as_mut().map_or(filled, |rem| {
-        let actual = filled.min(usize::try_from(*rem).unwrap_or(usize::MAX));
-        *rem -= actual as u64;
-        actual
-    })
 }
 
 const HTML_PROLOGUE: &str = "<!doctype html>
@@ -362,7 +325,7 @@ const fn digit_class(d: u8) -> &'static str {
 fn ascii_rendering(chunk: &[u8]) -> String {
     let mut s = String::with_capacity(chunk.len());
     for &b in chunk {
-        if b.is_ascii_graphic() || b == b' ' {
+        if is_printable(b) {
             s.push(b as char);
         } else {
             s.push('.');
