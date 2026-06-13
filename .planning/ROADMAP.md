@@ -7,13 +7,13 @@
 
 ## Phases
 
-- [ ] **Phase 1: Refactor Foundations** — De-duplicate `be_u64` (CLI-local) and drive `LensMode` dispatch from one table.
-- [ ] **Phase 2: Env-Test Serialisation** — Adopt `serial_test` with a single `env` key before any new env-mutating test lands.
-- [ ] **Phase 3: Roundtrip Matrix + Fixture Integration** — Assert byte-identical dump↔decode across every `LensMode × Format` combination; fixture-driven `assert_cmd` coverage.
-- [ ] **Phase 4: Tighten `parse_run` + Close Coverage Gaps** — REF-03 ships behind Phase 3's safety net; cover mmap/stdin/TUI-save paths.
+- [x] **Phase 1: Refactor Foundations** — De-duplicate `be_u64` (CLI-local) and drive `LensMode` dispatch from one table.
+- [x] **Phase 2: Env-Test Serialisation** — Adopt `serial_test` with a single `env` key before any new env-mutating test lands.
+- [x] **Phase 3: Roundtrip Matrix + Fixture Integration** — Assert byte-identical dump↔decode across every `LensMode × Format` combination; fixture-driven `assert_cmd` coverage.
+- [x] **Phase 4: Tighten `parse_run` + Close Coverage Gaps** — REF-03 ships behind Phase 3's safety net; cover mmap/stdin/TUI-save paths.
 - [x] **Phase 5: Fuzz + Criterion Harnesses** — Weekly-runnable fuzz targets and advisory-only bench scaffolding — Phase 6's prerequisite. (completed 2026-04-24)
-- [ ] **Phase 6: Streaming + Performance Pass** — Each PERF-0X change ships with before/after numbers from Phase 5 benches.
-- [ ] **Phase 7: CI Hardening** — Weekly scheduled fuzz job + enforced zero-dep invariant on `base60-core`.
+- [x] **Phase 6: Streaming + Performance Pass** — Each PERF-0X change ships with before/after numbers from Phase 5 benches. (completed 2026-06-13)
+- [x] **Phase 7: CI Hardening** — Weekly scheduled fuzz job + enforced zero-dep invariant on `base60-core`. (completed 2026-06-13)
 
 ## Phase Details
 
@@ -164,13 +164,13 @@ Phase 2 ──> Phase 3 / Phase 4 (provides #[serial(env)] idiom)
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Refactor Foundations | 0 / TBD | Not started | — |
-| 2. Env-Test Serialisation | 0 / TBD | Not started | — |
-| 3. Roundtrip Matrix + Fixture Integration | 0 / TBD | Not started | — |
-| 4. Tighten parse_run + Close Coverage Gaps | 0 / TBD | Not started | — |
-| 5. Fuzz + Criterion Harnesses | 2/2 | Complete   | 2026-04-24 |
-| 6. Streaming + Performance Pass | 0 / TBD | Not started | — |
-| 7. CI Hardening | 0 / TBD | Not started | — |
+| 1. Refactor Foundations | 2 / 2 | Complete | 2026-04-24 |
+| 2. Env-Test Serialisation | 3 / 3 | Complete | 2026-04-24 |
+| 3. Roundtrip Matrix + Fixture Integration | 3 / 3 | Complete | 2026-04-24 |
+| 4. Tighten parse_run + Close Coverage Gaps | 4 / 4 | Complete | 2026-04-24 |
+| 5. Fuzz + Criterion Harnesses | 2 / 2 | Complete | 2026-04-24 |
+| 6. Streaming + Performance Pass | 5 / 5 | Complete | 2026-06-13 |
+| 7. CI Hardening | 2 / 2 | Complete | 2026-06-13 |
 
 ---
 

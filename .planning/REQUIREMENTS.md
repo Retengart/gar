@@ -83,23 +83,23 @@ Each v2 REQ-ID maps to exactly one phase in ROADMAP.md. No orphans, no duplicate
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| REF-01 | Phase 1 — Refactor Foundations | Pending |
-| REF-02 | Phase 1 — Refactor Foundations | Pending |
-| REF-03 | Phase 4 — Tighten parse_run + Close Coverage Gaps | Pending |
-| REF-04 | Phase 4 — Tighten parse_run + Close Coverage Gaps | Pending |
-| TEST-01 | Phase 3 — Roundtrip Matrix + Fixture Integration | Pending |
-| TEST-02 | Phase 5 — Fuzz + Criterion Harnesses | Pending |
-| TEST-03 | Phase 3 — Roundtrip Matrix + Fixture Integration | Pending |
-| TEST-04 | Phase 2 — Env-Test Serialisation | Pending |
-| TEST-05 | Phase 4 — Tighten parse_run + Close Coverage Gaps | Pending |
-| PERF-01 | Phase 6 — Streaming + Performance Pass | Pending |
-| PERF-02 | Phase 6 — Streaming + Performance Pass | Pending |
-| PERF-03 | Phase 6 — Streaming + Performance Pass | Pending |
-| PERF-04 | Phase 6 — Streaming + Performance Pass | Pending |
-| PERF-05 | Phase 6 — Streaming + Performance Pass | Pending |
-| PERF-06 | Phase 5 — Fuzz + Criterion Harnesses | Pending |
-| CI-02 | Phase 7 — CI Hardening | Pending |
-| CI-03 | Phase 7 — CI Hardening | Pending |
+| REF-01 | Phase 1 — Refactor Foundations | Done |
+| REF-02 | Phase 1 — Refactor Foundations | Done |
+| REF-03 | Phase 4 — Tighten parse_run + Close Coverage Gaps | Done |
+| REF-04 | Phase 4 — Tighten parse_run + Close Coverage Gaps | Done |
+| TEST-01 | Phase 3 — Roundtrip Matrix + Fixture Integration | Done |
+| TEST-02 | Phase 5 — Fuzz + Criterion Harnesses | Done |
+| TEST-03 | Phase 3 — Roundtrip Matrix + Fixture Integration | Done |
+| TEST-04 | Phase 2 — Env-Test Serialisation | Done |
+| TEST-05 | Phase 4 — Tighten parse_run + Close Coverage Gaps | Done |
+| PERF-01 | Phase 6 — Streaming + Performance Pass | Done |
+| PERF-02 | Phase 6 — Streaming + Performance Pass | Done |
+| PERF-03 | Phase 6 — Streaming + Performance Pass | Done |
+| PERF-04 | Phase 6 — Streaming + Performance Pass | Done |
+| PERF-05 | Phase 6 — Streaming + Performance Pass | Done |
+| PERF-06 | Phase 5 — Fuzz + Criterion Harnesses | Done |
+| CI-02 | Phase 7 — CI Hardening | Done |
+| CI-03 | Phase 7 — CI Hardening | Done |
 
 **Coverage:**
 - v2 requirements: 17 total
