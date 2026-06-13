@@ -12,10 +12,10 @@
 
 mod common;
 
-use gar::Format;
 use common::{
     ALL_FIXTURES, ALL_LENS_CONFIGS, LensConfig, ROUNDTRIP_FORMATS, assert_roundtrip, gar_cmd,
 };
+use gar::Format;
 
 #[test]
 fn roundtrip_matrix_byte_identical() {

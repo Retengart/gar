@@ -9,7 +9,7 @@
 
 mod common;
 
-use common::{FixtureEntry, gar_cmd, fixtures};
+use common::{FixtureEntry, fixtures, gar_cmd};
 
 /// Declaration-order pairing of label + bytes so failure diagnostics
 /// name the failing fixture unambiguously (Pitfall 10 — no `HashMap`).

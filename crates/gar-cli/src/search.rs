@@ -25,7 +25,10 @@ use std::str::FromStr;
 /// enclosing `mod search` is private at crate root, so this type is
 /// still unreachable from the public API in non-fuzz builds
 /// (Phase 5 TEST-02 SC5).
-#[allow(unreachable_pub, reason = "pub for __fuzz re-export; unreachable from public API in private mod")]
+#[allow(
+    unreachable_pub,
+    reason = "pub for __fuzz re-export; unreachable from public API in private mod"
+)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Pattern(pub(crate) Vec<u8>);
 
@@ -34,7 +37,10 @@ pub struct Pattern(pub(crate) Vec<u8>);
 /// Widened to `pub` alongside [`Pattern`]: `FromStr::Err` on a `pub` type
 /// must itself be `pub`. `mod search` stays private at crate root, so
 /// this enum is unreachable from the public API in non-fuzz builds.
-#[allow(unreachable_pub, reason = "FromStr::Err on pub type must be pub; unreachable in private mod")]
+#[allow(
+    unreachable_pub,
+    reason = "FromStr::Err on pub type must be pub; unreachable in private mod"
+)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ParseError {
     /// Pattern was empty after stripping any prefix/quotes.
@@ -115,7 +121,10 @@ const fn hex_digit(c: u8) -> Option<u8> {
 /// `crate::lib` can surface it to `crates/gar-cli/benches/`. The
 /// enclosing `mod search` is private at crate root, so this function is
 /// still unreachable from the public API (Phase 5 PERF-06, TEST-02 SC5).
-#[allow(unreachable_pub, reason = "pub for __bench re-export; unreachable from public API in private mod")]
+#[allow(
+    unreachable_pub,
+    reason = "pub for __bench re-export; unreachable from public API in private mod"
+)]
 #[must_use]
 pub fn find_all(haystack: &[u8], needle: &[u8]) -> Vec<usize> {
     if needle.is_empty() || needle.len() > haystack.len() {

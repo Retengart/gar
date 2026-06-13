@@ -1,5 +1,8 @@
 #![forbid(unsafe_op_in_unsafe_fn)]
-#![allow(clippy::redundant_pub_crate, reason = "binary crate uses pub(crate) in private modules per unreachable_pub")]
+#![allow(
+    clippy::redundant_pub_crate,
+    reason = "binary crate uses pub(crate) in private modules per unreachable_pub"
+)]
 
 //! Library façade for the `gar` binary — hosts `run()` plus the
 //! minimum public surface integration tests need.
@@ -17,11 +20,11 @@ mod search;
 mod tui;
 
 use anyhow::Result;
-use gar_core::Lens;
 use clap::CommandFactory;
 use clap::Parser;
 use cli::{AnalyzeArgs, ColorChoice, Command, CompletionsArgs, DecodeArgs, ViewArgs};
 use color::Palette;
+use gar_core::Lens;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, IsTerminal, stdin, stdout};
 

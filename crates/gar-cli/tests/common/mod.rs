@@ -356,7 +356,7 @@ pub fn drive_tui_to_quit_with_fixture(fixture_bytes: &[u8], fixture_path: &Path)
         0, // base_offset
         gar::LensMode::None,
         gar::__TuiTimeScale::Gar, // re-exported TimeScale
-        false,                       // purist
+        false,                    // purist
         Some(fixture_path),
         || Ok(iter.next()),
     )

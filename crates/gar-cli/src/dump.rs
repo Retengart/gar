@@ -117,7 +117,10 @@ pub(crate) fn write_line<W: Write>(
 /// # Errors
 ///
 /// Propagates any [`io::Error`] returned by the underlying writer.
-#[allow(unreachable_pub, reason = "pub for __bench re-export; unreachable from public API in private mod")]
+#[allow(
+    unreachable_pub,
+    reason = "pub for __bench re-export; unreachable from public API in private mod"
+)]
 pub fn dump_all<W: Write>(
     data: &[u8],
     base_offset: u64,

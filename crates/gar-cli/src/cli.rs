@@ -1,11 +1,11 @@
 //! Command-line interface definition.
 
+use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap_complete::Shell;
 use gar_core::cuneiform;
 use gar_core::lens::{
     AngleLens, CuneiformLens, Lens, TabletLens, TimeLens, TimeScale as LensTimeScale,
 };
-use clap::{Args, Parser, Subcommand, ValueEnum};
-use clap_complete::Shell;
 use std::path::PathBuf;
 
 /// When to colorize output, mirroring the `--color` convention of
@@ -91,7 +91,12 @@ impl LensMode {
 /// emulators render them as double-wide, breaking ratatui cursor
 /// positioning. CLI dump paths pass `false` so glyphs render normally.
 #[must_use]
-pub(crate) fn build_lens(mode: LensMode, scale: TimeScale, purist: bool, tui: bool) -> Option<Box<dyn Lens>> {
+pub(crate) fn build_lens(
+    mode: LensMode,
+    scale: TimeScale,
+    purist: bool,
+    tui: bool,
+) -> Option<Box<dyn Lens>> {
     match mode {
         LensMode::None => None,
         LensMode::Time => Some(Box::new(TimeLens {
@@ -161,7 +166,10 @@ impl Format {
 /// `crate::lib` can surface it to `crates/gar-cli/benches/`. The
 /// enclosing `mod cli` is private at crate root, so this enum is still
 /// unreachable from the public API (Phase 5 PERF-06, TEST-02 SC5).
-#[allow(unreachable_pub, reason = "clap derive generates pub items in private module")]
+#[allow(
+    unreachable_pub,
+    reason = "clap derive generates pub items in private module"
+)]
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, ValueEnum)]
 pub enum InputFormat {
     /// Sniff the first non-empty line: `<!doctype|<html` → HTML,

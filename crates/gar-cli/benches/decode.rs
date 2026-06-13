@@ -12,8 +12,8 @@
     reason = "bench helper, not public API"
 )]
 
-use gar::__bench::{InputFormat, PALETTE_NONE, decode_stream, dump_all};
 use criterion::{Criterion, criterion_group, criterion_main};
+use gar::__bench::{InputFormat, PALETTE_NONE, decode_stream, dump_all};
 use std::io::sink;
 use std::sync::LazyLock;
 

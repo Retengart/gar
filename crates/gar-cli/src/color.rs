@@ -23,7 +23,10 @@ use ratatui::style::{Color, Modifier, Style};
 /// `&Palette`) to `crates/gar-cli/benches/`. The enclosing `mod color`
 /// is private at crate root, so this struct is still unreachable from the
 /// public API (Phase 5 PERF-06, TEST-02 SC5).
-#[allow(unreachable_pub, reason = "pub for __bench re-export; unreachable from public API in private mod")]
+#[allow(
+    unreachable_pub,
+    reason = "pub for __bench re-export; unreachable from public API in private mod"
+)]
 #[derive(Debug)]
 pub struct Palette {
     pub(crate) offset: &'static str,
@@ -47,7 +50,10 @@ pub struct Palette {
 /// `crate::lib` can surface it to `crates/gar-cli/benches/`. The
 /// enclosing `mod color` is private at crate root, so this static is
 /// still unreachable from the public API (Phase 5 PERF-06, TEST-02 SC5).
-#[allow(unreachable_pub, reason = "pub for __bench re-export; unreachable from public API in private mod")]
+#[allow(
+    unreachable_pub,
+    reason = "pub for __bench re-export; unreachable from public API in private mod"
+)]
 pub static PALETTE_NONE: Palette = Palette {
     offset: "",
     sep: "",

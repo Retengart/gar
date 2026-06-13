@@ -12,8 +12,8 @@
     reason = "bench helper, not public API"
 )]
 
-use gar::__bench::find_all;
 use criterion::{Criterion, criterion_group, criterion_main};
+use gar::__bench::find_all;
 use std::sync::LazyLock;
 
 const HAY_SIZE: usize = 1 << 20; // 1 MiB haystack

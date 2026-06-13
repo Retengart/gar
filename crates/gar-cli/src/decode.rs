@@ -54,7 +54,10 @@ const PAIR: usize = 2;
 /// enclosing `mod decode` is private at crate root, so this constant is
 /// still unreachable from the public API in non-fuzz builds
 /// (Phase 5 TEST-02 SC5).
-#[allow(unreachable_pub, reason = "pub for __fuzz re-export; unreachable from public API in private mod")]
+#[allow(
+    unreachable_pub,
+    reason = "pub for __fuzz re-export; unreachable from public API in private mod"
+)]
 pub const RUN_LEN: usize = PAIR * DIGITS + (DIGITS - 1);
 
 /// Sniffed format from the first non-empty line. Internal-only.
@@ -85,7 +88,10 @@ enum SniffedFormat {
 ///
 /// Returns the first [`io::Error`] encountered reading `r`, writing `w`,
 /// or from a malformed digit pair (carries the originating line number).
-#[allow(unreachable_pub, reason = "pub for __bench re-export; unreachable from public API in private mod")]
+#[allow(
+    unreachable_pub,
+    reason = "pub for __bench re-export; unreachable from public API in private mod"
+)]
 pub fn decode_stream<R: BufRead, W: Write>(
     mut r: R,
     w: &mut W,
@@ -437,7 +443,10 @@ fn not_extended_right(bytes: &[u8], end: usize) -> bool {
 /// * `"line {N}: invalid base-60 digit {D} at pair {P}"` — digit `>= 60`.
 /// * `"line {N}: decoded value exceeds u64::MAX"` — overflow on the final
 ///   `u128 → u64` conversion.
-#[allow(unreachable_pub, reason = "pub for __fuzz re-export; unreachable from public API in private mod")]
+#[allow(
+    unreachable_pub,
+    reason = "pub for __fuzz re-export; unreachable from public API in private mod"
+)]
 pub fn parse_run(run: &[u8; RUN_LEN], line_no: usize) -> io::Result<u64> {
     let mut value: u128 = 0;
     for i in 0..DIGITS {

@@ -101,7 +101,11 @@ impl EntropyStats {
         self.count += 1;
     }
 
-    #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, reason = "entropy calculation uses f64 casts")]
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        reason = "entropy calculation uses f64 casts"
+    )]
     fn mean(&self) -> f32 {
         if self.count == 0 {
             return 0.0;
@@ -218,7 +222,10 @@ fn shannon_entropy(hist: &[u32; 256], total: usize) -> f32 {
     }
     // Truncating to f32 for storage; the value is bounded in [0, 8] so
     // only the mantissa shrinks, never the exponent.
-    #[allow(clippy::cast_possible_truncation, reason = "region offset fits in usize")]
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "region offset fits in usize"
+    )]
     let out = h as f32;
     out.clamp(0.0, 8.0)
 }
@@ -329,7 +336,11 @@ fn region_counts(regions: &[Region]) -> (usize, usize, usize) {
     (ascii, high, low)
 }
 
-#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, reason = "entropy calculation uses f64 casts")]
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    reason = "entropy calculation uses f64 casts"
+)]
 fn percentage(count: u32, total: usize) -> f32 {
     if total == 0 {
         return 0.0;

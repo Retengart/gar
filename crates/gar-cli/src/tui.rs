@@ -7,9 +7,9 @@ use crate::dump::{border_style, status_style, styled_line, title_style};
 use crate::persist::{self, PersistedState};
 use crate::search::{self, Pattern};
 use anyhow::Result;
+use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 use gar_core::cuneiform;
 use gar_core::lens::Lens;
-use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::Terminal;
 use ratatui::backend::Backend;
 use ratatui::layout::{Constraint, Layout};
@@ -91,7 +91,10 @@ pub(crate) fn run(
 // 8 args maps 1:1 to `run`'s 6 args plus the `&mut Terminal` + event
 // closure injected for tests; splitting would just move the tuple one
 // indirection deeper without improving the call sites.
-#[allow(clippy::too_many_arguments, reason = "test hook maps 1:1 to run's args plus terminal and event closure")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "test hook maps 1:1 to run's args plus terminal and event closure"
+)]
 #[doc(hidden)]
 pub fn run_with_terminal<B, F>(
     terminal: &mut Terminal<B>,

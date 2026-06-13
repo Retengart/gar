@@ -11,8 +11,8 @@
     reason = "bench helper, not public API"
 )]
 
-use gar_core::{AngleLens, CuneiformLens, Lens, TabletLens, TimeLens};
 use criterion::{Criterion, criterion_group, criterion_main};
+use gar_core::{AngleLens, CuneiformLens, Lens, TabletLens, TimeLens};
 
 const FIB_MUL: u64 = 0x9E37_79B9_7F4A_7C15;
 const INPUTS: [u64; 1024] = {

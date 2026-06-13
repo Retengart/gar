@@ -12,8 +12,8 @@
     reason = "bench helper, not public API"
 )]
 
-use gar_core::convert::u64_to_base60;
 use criterion::{Criterion, criterion_group, criterion_main};
+use gar_core::convert::u64_to_base60;
 
 /// Deterministic 1024-element input; seed pattern locked so re-runs are
 /// bit-identical. `0x9E3779B97F4A7C15` is `2^64 / φ` (the Fibonacci hash

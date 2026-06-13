@@ -11,7 +11,7 @@
 
 mod common;
 
-use common::{gar_cmd, fixtures, spawn_with_closed_stdout};
+use common::{fixtures, gar_cmd, spawn_with_closed_stdout};
 use predicates::prelude::PredicateBooleanExt;
 
 // ---------------------------------------------------------------------

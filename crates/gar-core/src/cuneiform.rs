@@ -45,7 +45,10 @@ static GLYPHS: LazyLock<[String; 60]> = LazyLock::new(|| {
         }
         // `i` is in `1..60` (from `from_fn` over `[String; 60]`), so the
         // cast to `u8` is exact and lossless.
-        #[allow(clippy::cast_possible_truncation, reason = "intentional narrowing for indexing")]
+        #[allow(
+            clippy::cast_possible_truncation,
+            reason = "intentional narrowing for indexing"
+        )]
         let d = i as u8;
         let tens = usize::from(d / 10);
         let ones = usize::from(d % 10);
