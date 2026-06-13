@@ -1,6 +1,6 @@
-# base60 — Sumero-Babylonian binary viewer
+# gar — Sumero-Babylonian binary viewer
 
-`base60` is a hex-dump alternative that renders every 8 bytes of input as
+`gar` is a hex-dump alternative that renders every 8 bytes of input as
 eleven sexagesimal (base-60) digit pairs — the positional notation the
 Sumerians and Babylonians used for four millennia before they gave us
 the 60-second minute, 360-degree circle, and 24-hour day.
@@ -18,27 +18,27 @@ JSON/HTML output for pipeline and report use.
 ## Install
 
 ```sh
-cargo install --path crates/base60-cli
+cargo install --path crates/gar-cli
 ```
 
-`base60` will live at `$HOME/.cargo/bin/base60`. Workspace layout:
+`gar` will live at `$HOME/.cargo/bin/gar`. Workspace layout:
 
-* `crates/base60-core` — reusable library (`u64_to_base60`, lenses,
+* `crates/gar-core` — reusable library (`u64_to_base60`, lenses,
   cuneiform glyphs, URL-safe encoding). `pub` API; depend on it with
-  `path = "../base60-core"` until it's published to crates.io.
-* `crates/base60-cli`  — the `base60` binary that wraps it.
+  `path = "../gar-core"` until it's published to crates.io.
+* `crates/gar-cli`  — the `gar` binary that wraps it.
 
 ## Quick start
 
 ```sh
-base60 /bin/ls | head               # coloured dump to TTY
-base60 --format=plain file.bin      # pipeline-friendly (no ANSI)
-base60 --lens=time file.bin         # annotate every row with
+gar /bin/ls | head               # coloured dump to TTY
+gar --format=plain file.bin      # pipeline-friendly (no ANSI)
+gar --lens=time file.bin         # annotate every row with
                                     #   Babylonian day beru:uš:gar
-base60 --lens=cuneiform /bin/ls     # render digits as 𒁹𒌋 wedges
-base60 -i file.bin                  # launch the interactive TUI
-base60 analyze /bin/ls              # entropy + ASCII-strings summary
-base60 --format=plain file.bin | base60 decode > file.bin.rt
+gar --lens=cuneiform /bin/ls     # render digits as 𒁹𒌋 wedges
+gar -i file.bin                  # launch the interactive TUI
+gar analyze /bin/ls              # entropy + ASCII-strings summary
+gar --format=plain file.bin | gar decode > file.bin.rt
                                     # dump → bytes roundtrip
 ```
 
@@ -95,12 +95,12 @@ Launches a ratatui-based viewer. All keybinds:
 | `m<letter>` / `'<letter>`| set / jump bookmark (26 slots, `a-z`)        |
 | `]p` / `]z` / `]e`       | next printable run / zero-run / entropy spike|
 | `[p` / `[z` / `[e`       | previous of the same                         |
-| `q` / Esc                | quit (saves state to `$XDG_STATE_HOME/base60/`)|
+| `q` / Esc                | quit (saves state to `$XDG_STATE_HOME/gar/`)|
 
 State (cursor, scroll, active lens, bookmarks) is persisted per-file
 across runs. Reopening the same file resumes where you left off.
 
-### Statistical analysis — `base60 analyze FILE`
+### Statistical analysis — `gar analyze FILE`
 
 Streams a Shannon-entropy + byte-histogram + region-detection summary:
 
@@ -128,29 +128,29 @@ Detected region kinds: `ascii` (≥4 printable), `high-entropy` (>7.5
 bits/byte, likely compressed/encrypted), `low-entropy` (<1.0, likely
 padding).
 
-### Decoding — `base60 decode`
+### Decoding — `gar decode`
 
 Reverses the default view output. The parser scans for runs of eleven
 two-digit base-60 pairs joined by colons and ignores surrounding
 content (offset column, ASCII column, ANSI escapes). Roundtrip:
 
 ```sh
-base60 --format=plain file | base60 decode > file.roundtrip
+gar --format=plain file | gar decode > file.roundtrip
 cmp file file.roundtrip  # silent = identical
 ```
 
-### Shell completions — `base60 completions <SHELL>`
+### Shell completions — `gar completions <SHELL>`
 
 Supported: `bash`, `zsh`, `fish`, `elvish`, `powershell`. Install
 pattern:
 
 ```sh
-mkdir -p ~/.zfunc && base60 completions zsh > ~/.zfunc/_base60
+mkdir -p ~/.zfunc && gar completions zsh > ~/.zfunc/_gar
 ```
 
 ## Library usage
 
-`base60-core` exposes the pure-Rust building blocks:
+`gar-core` exposes the pure-Rust building blocks:
 
 ```rust
 use base60_core::{DIGITS, u64_to_base60, encode_u64, decode_u64};

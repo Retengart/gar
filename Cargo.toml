@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/base60-core", "crates/base60-cli", "crates/xtask"]
+members = ["crates/gar-core", "crates/gar-cli", "crates/xtask"]
 exclude = ["fuzz"]
 
 [workspace.package]
@@ -9,14 +9,19 @@ edition = "2024"
 rust-version = "1.95"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/retengart/test-60"
-publish = false
+publish = true
+readme = "README.md"
 
-# One profile for the whole workspace so `cargo install` of either
-# crate produces a stripped, LTO'd binary.
+# Default release: fast compile, no LTO.
 [profile.release]
+
+# Optimised profile for published binaries: thin LTO, single codegen unit,
+# debuginfo stripped. Use `cargo build --profile release-lto`.
+[profile.release-lto]
+inherits = "release"
 lto = "thin"
 codegen-units = 1
-strip = "symbols"
+strip = "debuginfo"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "warn"
@@ -27,13 +32,19 @@ unused_lifetimes = "warn"
 unused_qualifications = "warn"
 # `fuzzing` cfg is set by cargo-fuzz when building from fuzz/Cargo.toml;
 # declare it here so clippy's `unexpected_cfgs` lint accepts the `#[cfg(fuzzing)]`
-# gate on the `__fuzz` re-export module in base60-cli/src/lib.rs (Phase 5 TEST-02).
+# gate on the `__fuzz` re-export module in gar-cli/src/lib.rs (Phase 5 TEST-02).
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(fuzzing)"] }
 
 [workspace.lints.clippy]
-pedantic = { level = "warn", priority = -1 }
-nursery = { level = "warn", priority = -1 }
-cargo = { level = "warn", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+cargo = { level = "deny", priority = -1 }
+# Cherry-picked restriction lints (the restriction group itself contradicts
+# its own members and is not meant to be enabled wholesale).
+allow_attributes_without_reason = "warn"
+dbg_macro = "warn"
+todo = "warn"
+unimplemented = "warn"
 # Transitive dependency graph is fixed by upstream; warning is not actionable.
 multiple_crate_versions = "allow"
 # Intentional: module-per-concern layout is clearer than a monolithic file.

@@ -1,7 +1,7 @@
 //! Spawn-discipline gate: every `Command::cargo_bin` invocation in
-//! `crates/base60-cli/tests/**/*.rs` must live under `tests/common/`.
+//! `crates/gar-cli/tests/**/*.rs` must live under `tests/common/`.
 //! All other integration tests spawn the binary exclusively through the
-//! `base60_cmd()` helper, giving one enforcement point for
+//! `gar_cmd()` helper, giving one enforcement point for
 //! `.env_clear()` + env-restore invariants. Phase 3 (TEST-03) invariant.
 //!
 //! Line-based scanner — no `syn`, no regex. Forks the shape of
@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 /// Relative root from this crate's manifest to walk.
-const WALK_ROOT: &str = "../base60-cli/tests";
+const WALK_ROOT: &str = "../gar-cli/tests";
 
 /// Path-component signalling "this file may legitimately spawn the binary".
 const EXEMPT_DIR: &str = "common";
@@ -70,7 +70,7 @@ fn no_raw_spawn_outside_common() {
                 .to_string();
             failures.push(format!(
                 "{rel}:{lno}: raw Command::cargo_bin outside tests/common/ \
-                 — use base60_cmd() from tests/common/mod.rs",
+                 — use gar_cmd() from tests/common/mod.rs",
                 lno = idx + 1,
             ));
         }

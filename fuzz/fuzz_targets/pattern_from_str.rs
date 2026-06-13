@@ -13,6 +13,6 @@ fuzz_target!(|data: &[u8]| {
     // Do NOT use `std::panic::catch_unwind` — cargo-fuzz compiles with
     // `-Cpanic=abort`, which prevents unwinding.
     if let Ok(s) = std::str::from_utf8(data) {
-        let _ = base60::__fuzz::Pattern::from_str(s);
+        let _ = gar::__fuzz::Pattern::from_str(s);
     }
 });

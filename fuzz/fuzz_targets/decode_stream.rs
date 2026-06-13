@@ -9,9 +9,9 @@ use std::io::Cursor;
 
 fuzz_target!(|data: &[u8]| {
     let mut out = Vec::new();
-    let _ = base60::__fuzz::decode_stream(
+    let _ = gar::__fuzz::decode_stream(
         Cursor::new(data),
         &mut out,
-        base60::__fuzz::InputFormat::Auto,
+        gar::__fuzz::InputFormat::Auto,
     );
 });

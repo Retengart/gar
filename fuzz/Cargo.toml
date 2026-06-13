@@ -1,5 +1,5 @@
 [package]
-name = "base60-fuzz"
+name = "gar-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2024"
@@ -14,8 +14,8 @@ members = ["."]
 
 [dependencies]
 libfuzzer-sys = { version = "0.4", default-features = false, features = ["link_libfuzzer"] }
-base60-core = { path = "../crates/base60-core" }
-base60 = { path = "../crates/base60-cli", package = "base60" }
+gar-core = { path = "../crates/gar-core" }
+gar = { path = "../crates/gar-cli", package = "gar" }
 
 [[bin]]
 name = "parse_run"

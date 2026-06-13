@@ -1,5 +1,5 @@
 //! Env-discipline gate: every `env::set_var` / `env::remove_var` call in
-//! `base60-core/src/**/*.rs` and `base60-cli/src/**/*.rs` must live inside a
+//! `gar-core/src/**/*.rs` and `gar-cli/src/**/*.rs` must live inside a
 //! test function bearing `#[serial(env)]` — no alternate keys, no production
 //! code exceptions. Phase 2 (TEST-04) invariant.
 //!
@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 /// Relative roots from this crate's manifest to walk.
-const WALK_ROOTS: &[&str] = &["../base60-core/src", "../base60-cli/src"];
+const WALK_ROOTS: &[&str] = &["../gar-core/src", "../gar-cli/src"];
 
 /// Attribute key shapes that are explicitly rejected (Phase 2 D-13).
 const FORBIDDEN_SERIAL_KEYS: &[&str] = &[

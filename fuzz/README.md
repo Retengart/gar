@@ -1,7 +1,7 @@
-# base60 fuzz crate
+# gar fuzz crate
 
-This crate hosts libFuzzer targets for `base60-cli` internals surfaced via
-the `#[cfg(fuzzing)] pub mod __fuzz` hatch in `crates/base60-cli/src/lib.rs`
+This crate hosts libFuzzer targets for `gar-cli` internals surfaced via
+the `#[cfg(fuzzing)] pub mod __fuzz` hatch in `crates/gar-cli/src/lib.rs`
 (Phase 5 TEST-02, PROJECT.md Key Decision row 7).
 
 ## Platform
