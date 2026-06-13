@@ -89,6 +89,15 @@ impl Lens for TimeLens {
         // slot (non-sexagesimal), while the rest is base-60.
         format!("{day}d {beru:02}𒁹 {us:02}:{ga:02}")
     }
+
+    fn render_to(&self, chunk: u64, w: &mut dyn std::io::Write) -> std::io::Result<()> {
+        let gar = self.gar(chunk);
+        let day = gar / Self::GAR_PER_DAY;
+        let beru = (gar / Self::GAR_PER_HOUR) % 12;
+        let us = (gar / 60) % 60;
+        let ga = gar % 60;
+        write!(w, "{day}d {beru:02}\u{12079} {us:02}:{ga:02}")
+    }
 }
 
 // -- Angle -----------------------------------------------------------------
@@ -113,6 +122,17 @@ impl Lens for AngleLens {
         let arcsec = (chunk / Self::MAS_PER_ARCSEC) % 60;
         let mas = chunk % 1000;
         format!("{deg:03}°{arcmin:02}′{arcsec:02}.{mas:03}″")
+    }
+
+    fn render_to(&self, chunk: u64, w: &mut dyn std::io::Write) -> std::io::Result<()> {
+        let deg = chunk / Self::MAS_PER_DEG;
+        let arcmin = (chunk / Self::MAS_PER_ARCMIN) % 60;
+        let arcsec = (chunk / Self::MAS_PER_ARCSEC) % 60;
+        let mas = chunk % 1000;
+        write!(
+            w,
+            "{deg:03}\u{00b0}{arcmin:02}\u{2032}{arcsec:02}.{mas:03}\u{2033}"
+        )
     }
 }
 

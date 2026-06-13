@@ -122,8 +122,9 @@ pub(crate) struct Analysis {
     /// skew the sparkline.
     pub(crate) entropy_windows: Vec<f32>,
     /// Frequency of every byte value. `byte_freq[b]` is the count of byte
-    /// `b`. Heap-boxed so moving an `Analysis` is cheap.
-    pub(crate) byte_freq: Box<[u32; 256]>,
+    /// `b`. Stack-allocated (1 KiB) — cheaper than heap-boxing for a
+    /// single-pass analysis that is created once and consumed once.
+    pub(crate) byte_freq: [u32; 256],
     /// Disjoint classified regions, in start-offset order.
     pub(crate) regions: Vec<Region>,
     /// Min, max, mean of per-window entropy values.
@@ -137,7 +138,7 @@ pub(crate) struct Analysis {
 #[must_use]
 pub(crate) fn analyze(data: &[u8], window_size: usize) -> Analysis {
     let window = window_size.max(MIN_WINDOW);
-    let mut byte_freq = Box::new([0_u32; 256]);
+    let mut byte_freq = [0_u32; 256];
     for &b in data {
         byte_freq[b as usize] = byte_freq[b as usize].saturating_add(1);
     }

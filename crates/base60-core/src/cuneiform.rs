@@ -43,8 +43,10 @@ static GLYPHS: LazyLock<[String; 60]> = LazyLock::new(|| {
         if i == 0 {
             return ZERO_MARK.to_owned();
         }
-        // `i` is in `1..60`, so the `u8` cast is exact.
-        let d = u8::try_from(i).expect("digit < 60");
+        // `i` is in `1..60` (from `from_fn` over `[String; 60]`), so the
+        // cast to `u8` is exact and lossless.
+        #[allow(clippy::cast_possible_truncation)]
+        let d = i as u8;
         let tens = usize::from(d / 10);
         let ones = usize::from(d % 10);
         let mut s = String::with_capacity((tens + ones) * AS_WEDGE.len());
