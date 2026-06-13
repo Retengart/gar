@@ -132,7 +132,7 @@ gar-core (lib)                   gar (bin)
 cargo test --workspace                    # all tests
 cargo clippy --workspace --all-targets    # lints
 cargo doc --workspace --no-deps           # docs
-cargo build --profile release-lto         # optimised binary (thin LTO)
+cargo build --release                     # optimised binary (thin LTO)
 ```
 
 ## Publishing

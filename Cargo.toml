@@ -12,13 +12,7 @@ repository = "https://github.com/Retengart/gar"
 publish = true
 readme = "README.md"
 
-# Default release: fast compile, no LTO.
 [profile.release]
-
-# Optimised profile for published binaries: thin LTO, single codegen unit,
-# debuginfo stripped. Use `cargo build --profile release-lto`.
-[profile.release-lto]
-inherits = "release"
 lto = "thin"
 codegen-units = 1
 strip = "debuginfo"

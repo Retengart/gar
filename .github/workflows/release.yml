@@ -38,15 +38,15 @@ jobs:
         with:
           key: release-linux-${{ matrix.arch }}
       - name: Build
-        run: cargo build --profile release-lto --locked --target ${{ matrix.target }}
+        run: cargo build --profile release --locked --target ${{ matrix.target }}
       - name: Compress with UPX
         run: |
           wget -qO upx.tar.xz "https://github.com/upx/upx/releases/download/v${{ env.UPX_VERSION }}/${{ matrix.upx_pkg }}.tar.xz"
           echo "${{ matrix.upx_sha256 }}  upx.tar.xz" | sha256sum --check --strict --status
           tar -xf upx.tar.xz
-          ./${{ matrix.upx_pkg }}/upx --lzma "target/${{ matrix.target }}/release-lto/gar"
+          ./${{ matrix.upx_pkg }}/upx --lzma "target/${{ matrix.target }}/release/gar"
       - name: Rename
-        run: cp target/${{ matrix.target }}/release-lto/gar gar-linux-${{ matrix.arch }}
+        run: cp target/${{ matrix.target }}/release/gar gar-linux-${{ matrix.arch }}
       - uses: actions/upload-artifact@v4
         with:
           name: gar-linux-${{ matrix.arch }}
@@ -62,9 +62,9 @@ jobs:
         with:
           key: release-macos-aarch64
       - name: Build
-        run: cargo build --profile release-lto --locked --target aarch64-apple-darwin
+        run: cargo build --profile release --locked --target aarch64-apple-darwin
       - name: Rename
-        run: cp target/aarch64-apple-darwin/release-lto/gar gar-macos-aarch64
+        run: cp target/aarch64-apple-darwin/release/gar gar-macos-aarch64
       - uses: actions/upload-artifact@v4
         with:
           name: gar-macos-aarch64
@@ -94,7 +94,7 @@ jobs:
         with:
           key: release-windows-${{ matrix.arch }}
       - name: Build
-        run: cargo build --profile release-lto --locked --target ${{ matrix.target }}
+        run: cargo build --profile release --locked --target ${{ matrix.target }}
       - name: Compress with UPX
         if: matrix.upx
         shell: pwsh
@@ -103,10 +103,10 @@ jobs:
           $actual = (Get-FileHash upx.zip -Algorithm SHA256).Hash.ToLower()
           if ($actual -ne $env:UPX_SHA256) { throw "UPX checksum mismatch: expected $env:UPX_SHA256, got $actual" }
           Expand-Archive -DestinationPath upx upx.zip
-          upx/upx-${{ env.UPX_VERSION }}-win64/upx.exe --lzma "target/${{ matrix.target }}/release-lto/gar.exe"
+          upx/upx-${{ env.UPX_VERSION }}-win64/upx.exe --lzma "target/${{ matrix.target }}/release/gar.exe"
       - name: Rename
         shell: pwsh
-        run: cp target/${{ matrix.target }}/release-lto/gar.exe gar-windows-${{ matrix.arch }}.exe
+        run: cp target/${{ matrix.target }}/release/gar.exe gar-windows-${{ matrix.arch }}.exe
       - uses: actions/upload-artifact@v4
         with:
           name: gar-windows-${{ matrix.arch }}.exe
