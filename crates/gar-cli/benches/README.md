@@ -2,18 +2,16 @@
 
 These `criterion` benches are a local-only baseline-tracking tool, not a
 CI gate. Shared GitHub Actions runners have a 10–15% noise floor that
-exceeds any reasonable threshold (PROJECT.md Key Decision row 8;
-PITFALLS.md Pitfall 9). CI will **never** run `cargo bench`; Phase 7 SC4
-only adds a `cargo bench --workspace --no-run --locked` compile smoke.
+exceeds any reasonable threshold. CI will **never** run `cargo bench`.
 
 ## Running locally
 
 ```bash
 # Capture a baseline on the current commit:
-cargo bench -p base60 --bench <name> -- --save-baseline pre
+cargo bench -p gar --bench <name> -- --save-baseline pre
 
 # Apply your change, then compare:
-cargo bench -p base60 --bench <name> -- --baseline pre
+cargo bench -p gar --bench <name> -- --baseline pre
 ```
 
 Or for all benches across the workspace:
@@ -31,11 +29,11 @@ at the delta, not a CI checkmark.
 
 | Bench file | Target | Why it exists |
 |-----------|--------|---------------|
-| `base60-core/benches/convert.rs` | `u64_to_base60` hot loop | Every dump line calls this; regression gate for future `convert` work |
-| `base60-core/benches/lens.rs` | `Lens::render` × 4 impls | Baseline for Phase 6 PERF-04 `render_to<W>` migration |
-| `base60-cli/benches/dump.rs` | `dump_all` over 1 MiB mono | Baseline for Phase 6 PERF-01 streaming path |
-| `base60-cli/benches/decode.rs` | `decode_stream` over 1 MiB dump | Protects roundtrip perf; no REQ-IDs currently depend on it but cheap to track |
-| `base60-cli/benches/search.rs` | `find_all` × 4 cells | **Gates Phase 6 PERF-03** `memchr::memmem` swap (PITFALLS Pitfall 4). Every cell must not regress when the swap lands. |
+| `gar-core/benches/convert.rs` | `u64_to_base60` hot loop | Every dump line calls this |
+| `gar-core/benches/lens.rs` | `Lens::render` × 4 impls | Baseline for lens rendering |
+| `gar-cli/benches/dump.rs` | `dump_all` over 1 MiB mono | Baseline for streaming path |
+| `gar-cli/benches/decode.rs` | `decode_stream` over 1 MiB dump | Protects roundtrip perf |
+| `gar-cli/benches/search.rs` | `find_all` × 4 cells | Baseline for memchr search |
 
 ## Noise threshold
 

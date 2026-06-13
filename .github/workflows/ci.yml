@@ -95,10 +95,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: base60-core must have zero runtime dependencies
+      - name: gar-core must have zero runtime dependencies
         run: |
-          if sed -n '/^\[dependencies\]/,/^\[/{ /^\[/d; /^#/d; /^$/d; p; }' crates/base60-core/Cargo.toml | grep -q .; then
-            echo '::error::base60-core has runtime dependencies — violates zero-dep invariant'
+          if sed -n '/^\[dependencies\]/,/^\[/{ /^\[/d; /^#/d; /^$/d; p; }' crates/gar-core/Cargo.toml | grep -q .; then
+            echo '::error::gar-core has runtime dependencies — violates zero-dep invariant'
             exit 1
           fi
       - name: Benchmarks compile

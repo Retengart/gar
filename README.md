@@ -153,7 +153,7 @@ mkdir -p ~/.zfunc && gar completions zsh > ~/.zfunc/_gar
 `gar-core` exposes the pure-Rust building blocks:
 
 ```rust
-use base60_core::{DIGITS, u64_to_base60, encode_u64, decode_u64};
+use gar_core::{DIGITS, u64_to_base60, encode_u64, decode_u64};
 
 let digits = u64_to_base60(5025);
 assert_eq!(digits[8..], [1, 23, 45]);
@@ -179,13 +179,6 @@ table.
 * **mmap** for file input via `memmap2`; stdin streams into a `Vec`.
 * **Persistence key** for the TUI state store is FNV-1a of the
   canonicalised path — stable, non-crypto, zero deps.
-
-## Roadmap
-
-`docs/plans/2026-04-23-sumerian-roadmap.md` tracks the full plan. All
-seven phases — CI, Sumerian Lens, Data Archaeologist (analysis),
-Tablet Navigator (TUI), decode/format outputs, workspace split, and
-release engineering — are implemented.
 
 ## License
 
