@@ -546,15 +546,7 @@ mod tests {
     fn dump_reader_matches_dump_all_for_full_input() {
         let data: Vec<u8> = (0..24).collect();
         let mut buf = Vec::new();
-        dump_reader(
-            data.as_slice(),
-            0,
-            None,
-            &mut buf,
-            &PALETTE_NONE,
-            None,
-        )
-        .unwrap();
+        dump_reader(data.as_slice(), 0, None, &mut buf, &PALETTE_NONE, None).unwrap();
         let streamed = String::from_utf8(buf).unwrap();
 
         let mut buf2 = Vec::new();
@@ -575,15 +567,7 @@ mod tests {
     fn dump_reader_respects_skip() {
         let data: Vec<u8> = (0..24).collect();
         let mut buf = Vec::new();
-        dump_reader(
-            data.as_slice(),
-            8,
-            None,
-            &mut buf,
-            &PALETTE_NONE,
-            None,
-        )
-        .unwrap();
+        dump_reader(data.as_slice(), 8, None, &mut buf, &PALETTE_NONE, None).unwrap();
         let rendered = String::from_utf8(buf).unwrap();
         // First line offset should be 8 (the skip amount).
         assert!(rendered.starts_with("00000008  "));
@@ -595,15 +579,7 @@ mod tests {
     fn dump_reader_respects_length() {
         let data: Vec<u8> = (0..24).collect();
         let mut buf = Vec::new();
-        dump_reader(
-            data.as_slice(),
-            0,
-            Some(16),
-            &mut buf,
-            &PALETTE_NONE,
-            None,
-        )
-        .unwrap();
+        dump_reader(data.as_slice(), 0, Some(16), &mut buf, &PALETTE_NONE, None).unwrap();
         let rendered = String::from_utf8(buf).unwrap();
         // Two 8-byte lines + trailer.
         assert_eq!(rendered.lines().count(), 3);
