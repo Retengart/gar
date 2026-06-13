@@ -12,7 +12,7 @@ use crate::color::{
     self, Palette, delim_style, digit_style, dot_style, lens_style, offset_style, printable_style,
     sep_style,
 };
-use base60_core::convert::DIGITS;
+use base60_core::convert::{DIGIT_PAIRS, DIGITS};
 use base60_core::lens::Lens;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -62,9 +62,7 @@ pub(crate) fn write_line<W: Write>(
             w.write_all(palette.reset.as_bytes())?;
         }
         w.write_all(palette.digit(d).as_bytes())?;
-        let hi = b'0' + d / 10;
-        let lo = b'0' + d % 10;
-        w.write_all(&[hi, lo])?;
+        w.write_all(&DIGIT_PAIRS[d as usize])?;
         w.write_all(palette.reset.as_bytes())?;
     }
 
@@ -581,5 +579,16 @@ mod tests {
         // Two 8-byte lines + trailer.
         assert_eq!(rendered.lines().count(), 3);
         assert!(rendered.contains("# bytes=0x10\n"));
+    }
+
+    #[test]
+    fn digit_pairs_match_manual_computation() {
+        for d in 0_u8..60 {
+            let expected = [b'0' + d / 10, b'0' + d % 10];
+            assert_eq!(
+                DIGIT_PAIRS[d as usize], expected,
+                "DIGIT_PAIRS[{d}] mismatch"
+            );
+        }
     }
 }

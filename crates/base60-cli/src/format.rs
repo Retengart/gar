@@ -16,7 +16,7 @@
 
 use crate::chunk::{CHUNK, prepare};
 use base60_core::lens::Lens;
-use std::io::{self, BufWriter, Write};
+use std::io::{self, BufRead, BufReader, BufWriter, Read, Write};
 
 /// Emit newline-delimited JSON (ndjson): one object per dump line.
 ///
@@ -130,6 +130,203 @@ pub(crate) fn emit_html<W: Write>(
     writeln!(out, "<!-- bytes=0x{:x} -->", data.len())?;
     out.write_all(HTML_EPILOGUE.as_bytes())?;
     out.flush()
+}
+
+/// Emit newline-delimited JSON from a streaming reader, processing
+/// 8-byte chunks as they arrive without materialising the full input.
+///
+/// `skip` bytes are discarded from the front of the reader and also
+/// used as the starting offset. `length` optionally caps the number of
+/// bytes to process after skipping.
+///
+/// # Errors
+///
+/// Propagates any [`io::Error`] returned by the underlying reader or writer.
+pub(crate) fn emit_json_stream<R: Read, W: Write>(
+    reader: R,
+    skip: u64,
+    length: Option<u64>,
+    w: W,
+    lens: Option<&dyn Lens>,
+) -> io::Result<()> {
+    let mut reader = BufReader::new(reader);
+    let mut out = BufWriter::new(w);
+
+    skip_bytes(&mut reader, skip)?;
+
+    let mut offset = skip;
+    let mut total: u64 = 0;
+    let mut remaining = length;
+    let mut chunk_buf = [0u8; CHUNK];
+
+    loop {
+        if remaining.is_some_and(|r| r == 0) {
+            break;
+        }
+
+        let filled = read_chunk(&mut reader, &mut chunk_buf)?;
+        if filled == 0 {
+            break;
+        }
+
+        let actual = clamp_filled(filled, &mut remaining);
+        total += actual as u64;
+
+        let chunk = &chunk_buf[..actual];
+        let (chunk_be, digits) = prepare(chunk);
+
+        out.write_all(b"{\"offset\":")?;
+        write!(out, "{offset}")?;
+
+        out.write_all(b",\"bytes\":[")?;
+        for (i, &b) in chunk.iter().enumerate() {
+            if i > 0 {
+                out.write_all(b",")?;
+            }
+            write!(out, "{b}")?;
+        }
+        out.write_all(b"]")?;
+
+        out.write_all(b",\"digits\":[")?;
+        for (i, &d) in digits.iter().enumerate() {
+            if i > 0 {
+                out.write_all(b",")?;
+            }
+            write!(out, "{d}")?;
+        }
+        out.write_all(b"]")?;
+
+        out.write_all(b",\"ascii\":\"")?;
+        write_json_string(&mut out, &ascii_rendering(chunk))?;
+        out.write_all(b"\"")?;
+
+        if let Some(lens) = lens {
+            out.write_all(b",\"lens\":\"")?;
+            write_json_string(&mut out, &lens.render(chunk_be))?;
+            out.write_all(b"\"")?;
+        }
+
+        out.write_all(b"}\n")?;
+        offset = offset.saturating_add(CHUNK as u64);
+    }
+
+    writeln!(out, r#"{{"type":"meta","bytes":{total}}}"#)?;
+    out.flush()
+}
+
+/// Emit a self-contained HTML document from a streaming reader.
+///
+/// Behaviour mirrors [`emit_json_stream`] but outputs HTML.
+///
+/// # Errors
+///
+/// Propagates any [`io::Error`] returned by the underlying reader or writer.
+pub(crate) fn emit_html_stream<R: Read, W: Write>(
+    reader: R,
+    skip: u64,
+    length: Option<u64>,
+    w: W,
+    lens: Option<&dyn Lens>,
+) -> io::Result<()> {
+    let mut reader = BufReader::new(reader);
+    let mut out = BufWriter::new(w);
+
+    out.write_all(HTML_PROLOGUE.as_bytes())?;
+
+    skip_bytes(&mut reader, skip)?;
+
+    let mut offset = skip;
+    let mut total: u64 = 0;
+    let mut remaining = length;
+    let mut chunk_buf = [0u8; CHUNK];
+
+    loop {
+        if remaining.is_some_and(|r| r == 0) {
+            break;
+        }
+
+        let filled = read_chunk(&mut reader, &mut chunk_buf)?;
+        if filled == 0 {
+            break;
+        }
+
+        let actual = clamp_filled(filled, &mut remaining);
+        total += actual as u64;
+
+        let chunk = &chunk_buf[..actual];
+        let (chunk_be, digits) = prepare(chunk);
+
+        write!(out, "<span class=\"offset\">{offset:08x}</span>  ")?;
+
+        for (i, &d) in digits.iter().enumerate() {
+            if i > 0 {
+                out.write_all(b"<span class=\"sep\">:</span>")?;
+            }
+            write!(out, "<span class=\"{}\">{d:02}</span>", digit_class(d))?;
+        }
+
+        out.write_all(b"  <span class=\"delim\">|</span>")?;
+        for &b in chunk {
+            if b.is_ascii_graphic() || b == b' ' {
+                out.write_all(b"<span class=\"print\">")?;
+                write_html_char(&mut out, b as char)?;
+                out.write_all(b"</span>")?;
+            } else {
+                out.write_all(b"<span class=\"dot\">.</span>")?;
+            }
+        }
+        out.write_all(b"<span class=\"delim\">|</span>")?;
+
+        if let Some(lens) = lens {
+            out.write_all(b"  <span class=\"lens\">")?;
+            write_html_string(&mut out, &lens.render(chunk_be))?;
+            out.write_all(b"</span>")?;
+        }
+
+        out.write_all(b"\n")?;
+        offset = offset.saturating_add(CHUNK as u64);
+    }
+
+    writeln!(out, "<!-- bytes=0x{total:x} -->")?;
+    out.write_all(HTML_EPILOGUE.as_bytes())?;
+    out.flush()
+}
+
+/// Discard `n` bytes from the reader using buffered reads.
+fn skip_bytes(reader: &mut BufReader<impl Read>, mut n: u64) -> io::Result<()> {
+    while n > 0 {
+        let buf = reader.fill_buf()?;
+        if buf.is_empty() {
+            break;
+        }
+        let consume = usize::try_from(n).unwrap_or(usize::MAX).min(buf.len());
+        reader.consume(consume);
+        n -= consume as u64;
+    }
+    Ok(())
+}
+
+/// Read up to `CHUNK` bytes, returning how many were filled.
+fn read_chunk(reader: &mut BufReader<impl Read>, buf: &mut [u8; CHUNK]) -> io::Result<usize> {
+    let mut filled = 0;
+    while filled < CHUNK {
+        match reader.read(&mut buf[filled..]) {
+            Ok(0) => break,
+            Ok(n) => filled += n,
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(filled)
+}
+
+/// Clamp `filled` against the `remaining` budget, updating it in place.
+fn clamp_filled(filled: usize, remaining: &mut Option<u64>) -> usize {
+    remaining.as_mut().map_or(filled, |rem| {
+        let actual = filled.min(usize::try_from(*rem).unwrap_or(usize::MAX));
+        *rem -= actual as u64;
+        actual
+    })
 }
 
 const HTML_PROLOGUE: &str = "<!doctype html>
@@ -348,5 +545,123 @@ mod tests {
         let out = html(&3_600_000_u64.to_be_bytes(), Some(&AngleLens));
         assert!(out.contains("class=\"lens\""));
         assert!(out.contains("001°00′00.000″"));
+    }
+
+    #[test]
+    fn json_stream_matches_buffered_for_full_input() {
+        let data: Vec<u8> = (0..24).collect();
+        let mut buf = Vec::new();
+        emit_json_stream(data.as_slice(), 0, None, &mut buf, None).unwrap();
+        let streamed = String::from_utf8(buf).unwrap();
+        let buffered = json(&data, None);
+        assert_eq!(streamed, buffered);
+    }
+
+    #[test]
+    fn json_stream_matches_buffered_for_short_input() {
+        let data = b"hello";
+        let mut buf = Vec::new();
+        emit_json_stream(data.as_slice(), 0, None, &mut buf, None).unwrap();
+        let streamed = String::from_utf8(buf).unwrap();
+        let buffered = json(data, None);
+        assert_eq!(streamed, buffered);
+    }
+
+    #[test]
+    fn json_stream_handles_empty_input() {
+        let mut buf = Vec::new();
+        emit_json_stream(b"".as_slice(), 0, None, &mut buf, None).unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        assert_eq!(out, "{\"type\":\"meta\",\"bytes\":0}\n");
+    }
+
+    #[test]
+    fn json_stream_respects_skip() {
+        let data: Vec<u8> = (0..24).collect();
+        let mut buf = Vec::new();
+        emit_json_stream(data.as_slice(), 8, None, &mut buf, None).unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        // First object should have offset 8.
+        assert!(out.contains("\"offset\":8"));
+        // Meta trailer should report 16 bytes (24 - 8 skipped).
+        assert!(out.contains(r#""bytes":16}"#));
+    }
+
+    #[test]
+    fn json_stream_respects_length() {
+        let data: Vec<u8> = (0..24).collect();
+        let mut buf = Vec::new();
+        emit_json_stream(data.as_slice(), 0, Some(16), &mut buf, None).unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        // 2 chunk lines + 1 meta line.
+        assert_eq!(out.lines().count(), 3);
+        assert!(out.contains(r#""bytes":16}"#));
+    }
+
+    #[test]
+    fn json_stream_with_lens_matches_buffered() {
+        let data: Vec<u8> = (0..16).collect();
+        let lens = TimeLens::default();
+        let mut buf = Vec::new();
+        emit_json_stream(data.as_slice(), 0, None, &mut buf, Some(&lens)).unwrap();
+        let streamed = String::from_utf8(buf).unwrap();
+        let mut buf2 = Vec::new();
+        emit_json(&data, 0, &mut buf2, Some(&lens)).unwrap();
+        let buffered = String::from_utf8(buf2).unwrap();
+        assert_eq!(streamed, buffered);
+    }
+
+    #[test]
+    fn html_stream_matches_buffered_for_full_input() {
+        let data: Vec<u8> = (0..24).collect();
+        let mut buf = Vec::new();
+        emit_html_stream(data.as_slice(), 0, None, &mut buf, None).unwrap();
+        let streamed = String::from_utf8(buf).unwrap();
+        let buffered = html(&data, None);
+        assert_eq!(streamed, buffered);
+    }
+
+    #[test]
+    fn html_stream_handles_empty_input() {
+        let mut buf = Vec::new();
+        emit_html_stream(b"".as_slice(), 0, None, &mut buf, None).unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        assert!(out.starts_with("<!doctype html>"));
+        assert!(out.contains("<!-- bytes=0x0 -->\n"));
+        assert!(out.ends_with("</pre></body></html>\n"));
+    }
+
+    #[test]
+    fn html_stream_respects_skip() {
+        let data: Vec<u8> = (0..24).collect();
+        let mut buf = Vec::new();
+        emit_html_stream(data.as_slice(), 8, None, &mut buf, None).unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        // First line offset should be 8.
+        assert!(out.contains("00000008"));
+        // Trailer should report 16 bytes.
+        assert!(out.contains("<!-- bytes=0x10 -->\n"));
+    }
+
+    #[test]
+    fn html_stream_respects_length() {
+        let data: Vec<u8> = (0..24).collect();
+        let mut buf = Vec::new();
+        emit_html_stream(data.as_slice(), 0, Some(16), &mut buf, None).unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        assert!(out.contains("<!-- bytes=0x10 -->\n"));
+    }
+
+    #[test]
+    fn html_stream_with_lens_matches_buffered() {
+        let data: Vec<u8> = (0..16).collect();
+        let lens = AngleLens;
+        let mut buf = Vec::new();
+        emit_html_stream(data.as_slice(), 0, None, &mut buf, Some(&lens)).unwrap();
+        let streamed = String::from_utf8(buf).unwrap();
+        let mut buf2 = Vec::new();
+        emit_html(&data, 0, &mut buf2, Some(&lens)).unwrap();
+        let buffered = String::from_utf8(buf2).unwrap();
+        assert_eq!(streamed, buffered);
     }
 }

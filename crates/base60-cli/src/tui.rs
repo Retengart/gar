@@ -16,7 +16,7 @@ use ratatui::layout::{Constraint, Layout};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
-use std::collections::HashMap;
+use std::borrow::Cow;
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -187,10 +187,10 @@ struct ViewState {
     match_idx: usize,
     /// Last known status message — set after a search confirms or errors,
     /// shown in the status bar for one render then cleared.
-    status_message: Option<String>,
-    /// Vim-style bookmarks keyed by letter (`a-z`). Values are byte
-    /// offsets inside the loaded slice.
-    bookmarks: HashMap<char, usize>,
+    status_message: Option<Cow<'static, str>>,
+    /// Vim-style bookmarks indexed by letter (`a-z` → 0–25). Values
+    /// are byte offsets inside the loaded slice.
+    bookmarks: [Option<usize>; 26],
     /// Precomputed statistical analysis of the loaded slice. Used by
     /// semantic jumps (`]p`, `]z`, `]e`) to locate the next/prev
     /// ASCII run, zero fill, or entropy spike without rescanning on
@@ -218,7 +218,7 @@ impl ViewState {
             matches: Vec::new(),
             match_idx: usize::MAX,
             status_message: None,
-            bookmarks: HashMap::new(),
+            bookmarks: [None; 26],
             analysis: None,
             analysis_rx: {
                 let (tx, rx) = std::sync::mpsc::channel();
@@ -477,7 +477,8 @@ impl ViewState {
             'z' => RegionKind::LowEntropy,
             'e' => RegionKind::HighEntropy,
             _ => {
-                self.status_message = Some(format!("unknown jump letter {c:?} (p/z/e)"));
+                self.status_message =
+                    Some(Cow::Owned(format!("unknown jump letter {c:?} (p/z/e)")));
                 return std::ops::ControlFlow::Continue(());
             }
         };
@@ -493,7 +494,7 @@ impl ViewState {
         let kind_label = region_label(kind);
 
         let Some(analysis) = &self.analysis else {
-            self.status_message = Some("analysing... (jump deferred)".to_owned());
+            self.status_message = Some(Cow::Borrowed("analysing... (jump deferred)"));
             return;
         };
 
@@ -514,12 +515,12 @@ impl ViewState {
 
         if let Some(region) = candidate {
             self.cursor = Some(region.start);
-            self.status_message = Some(format!(
+            self.status_message = Some(Cow::Owned(format!(
                 "{direction_label} {kind_label} @ 0x{:08x}",
                 region.start
-            ));
+            )));
         } else {
-            self.status_message = Some(format!("no {direction_label} {kind_label}"));
+            self.status_message = Some(Cow::Owned(format!("no {direction_label} {kind_label}")));
         }
     }
 
@@ -530,23 +531,31 @@ impl ViewState {
             // Esc, enter, arrow keys — anything non-letter just cancels.
             return std::ops::ControlFlow::Continue(());
         };
-        if !c.is_ascii_alphabetic() {
-            self.status_message = Some(format!("bookmarks use a-z, got {c:?}"));
+        let Some(idx) = bookmark_idx(c) else {
+            self.status_message = Some(Cow::Owned(format!("bookmarks use a-z, got {c:?}")));
             return std::ops::ControlFlow::Continue(());
-        }
-        let slot = c.to_ascii_lowercase();
+        };
         if setting {
             let Some(byte) = self.cursor else {
-                self.status_message = Some("empty input — nothing to mark".to_owned());
+                self.status_message = Some(Cow::Borrowed("empty input — nothing to mark"));
                 return std::ops::ControlFlow::Continue(());
             };
-            self.bookmarks.insert(slot, byte);
-            self.status_message = Some(format!("marked '{slot}' = 0x{byte:08x}"));
-        } else if let Some(&byte) = self.bookmarks.get(&slot) {
+            self.bookmarks[idx] = Some(byte);
+            self.status_message = Some(Cow::Owned(format!(
+                "marked '{}' = 0x{byte:08x}",
+                slot_char(idx),
+            )));
+        } else if let Some(byte) = self.bookmarks[idx] {
             self.cursor = Some(byte);
-            self.status_message = Some(format!("jumped '{slot}' = 0x{byte:08x}"));
+            self.status_message = Some(Cow::Owned(format!(
+                "jumped '{}' = 0x{byte:08x}",
+                slot_char(idx),
+            )));
         } else {
-            self.status_message = Some(format!("bookmark '{slot}' not set"));
+            self.status_message = Some(Cow::Owned(format!(
+                "bookmark '{}' not set",
+                slot_char(idx),
+            )));
         }
         std::ops::ControlFlow::Continue(())
     }
@@ -585,21 +594,23 @@ impl ViewState {
                 if let Some(&first) = self.matches.first() {
                     self.cursor = Some(first);
                     self.match_idx = 0;
-                    self.status_message =
-                        Some(format!("match 1/{} at 0x{first:08x}", self.matches.len()));
+                    self.status_message = Some(Cow::Owned(format!(
+                        "match 1/{} at 0x{first:08x}",
+                        self.matches.len()
+                    )));
                 } else {
-                    self.status_message = Some(format!("no match for {buf:?}"));
+                    self.status_message = Some(Cow::Owned(format!("no match for {buf:?}")));
                 }
             }
             Err(_) => {
-                self.status_message = Some(format!("bad pattern: {buf:?}"));
+                self.status_message = Some(Cow::Owned(format!("bad pattern: {buf:?}")));
             }
         }
     }
 
     fn jump_to_next_match(&mut self) {
         if self.matches.is_empty() {
-            self.status_message = Some("no active search".to_owned());
+            self.status_message = Some(Cow::Borrowed("no active search"));
             return;
         }
         let next = if self.match_idx == usize::MAX {
@@ -610,16 +621,16 @@ impl ViewState {
         self.match_idx = next;
         let byte = self.matches[next];
         self.cursor = Some(byte);
-        self.status_message = Some(format!(
+        self.status_message = Some(Cow::Owned(format!(
             "match {}/{} at 0x{byte:08x}",
             next + 1,
             self.matches.len()
-        ));
+        )));
     }
 
     fn jump_to_prev_match(&mut self) {
         if self.matches.is_empty() {
-            self.status_message = Some("no active search".to_owned());
+            self.status_message = Some(Cow::Borrowed("no active search"));
             return;
         }
         let prev = if self.match_idx == usize::MAX || self.match_idx == 0 {
@@ -630,11 +641,11 @@ impl ViewState {
         self.match_idx = prev;
         let byte = self.matches[prev];
         self.cursor = Some(byte);
-        self.status_message = Some(format!(
+        self.status_message = Some(Cow::Owned(format!(
             "match {}/{} at 0x{byte:08x}",
             prev + 1,
             self.matches.len()
-        ));
+        )));
     }
 
     fn cycle_lens(&mut self) {
@@ -678,18 +689,21 @@ impl ViewState {
         self.cursor = saved.cursor.map(|c| byte_min(c, last));
         self.lens_mode = saved.lens_mode;
         self.lens = build_lens(saved.lens_mode, self.scale, self.purist);
-        self.bookmarks = saved
-            .bookmarks
-            .into_iter()
-            .filter(|(_, byte)| *byte < self.data_len)
-            .collect();
+        self.bookmarks = [None; 26];
+        for (c, byte) in saved.bookmarks {
+            if byte < self.data_len
+                && let Some(idx) = bookmark_idx(c)
+            {
+                self.bookmarks[idx] = Some(byte);
+            }
+        }
     }
 
     /// Snapshot the subset of state that survives across runs.
     fn snapshot(&self) -> PersistedState {
-        let mut marks: Vec<(char, usize)> = self.bookmarks.iter().map(|(&c, &b)| (c, b)).collect();
-        // Deterministic order on disk so `diff`-ing state files is useful.
-        marks.sort_unstable_by_key(|&(c, _)| c);
+        let marks: Vec<(char, usize)> = (0..26)
+            .filter_map(|i| self.bookmarks[i].map(|b| (slot_char(i), b)))
+            .collect();
         PersistedState {
             scroll: self.scroll,
             cursor: self.cursor,
@@ -701,6 +715,31 @@ impl ViewState {
 
 const fn byte_min(a: usize, b: usize) -> usize {
     if a < b { a } else { b }
+}
+
+/// Map a letter to a bookmark array index: `'a'` → 0, `'z'` → 25.
+/// Returns `None` for non-alphabetic or non-ASCII characters.
+#[must_use]
+const fn bookmark_idx(c: char) -> Option<usize> {
+    let b = c as u32;
+    if b >= 0x61 && b <= 0x7a {
+        Some((b - 0x61) as usize)
+    } else if b >= 0x41 && b <= 0x5a {
+        Some((b - 0x41) as usize)
+    } else {
+        None
+    }
+}
+
+/// Map a bookmark array index (0–25) back to its lowercase letter.
+/// Returns `'a'` for index 0, `'z'` for index 25.
+#[must_use]
+const fn slot_char(idx: usize) -> char {
+    const SLOTS: [u8; 26] = [
+        b'a', b'b', b'c', b'd', b'e', b'f', b'g', b'h', b'i', b'j', b'k', b'l', b'm', b'n', b'o',
+        b'p', b'q', b'r', b's', b't', b'u', b'v', b'w', b'x', b'y', b'z',
+    ];
+    SLOTS[idx] as char
 }
 
 const fn region_label(kind: RegionKind) -> &'static str {
@@ -1086,7 +1125,7 @@ mod tests {
         s.cursor = Some(42);
         let _ = s.handle_key(KeyCode::Char('m'), KeyModifiers::NONE, b"");
         let _ = s.handle_key(KeyCode::Char('a'), KeyModifiers::NONE, b"");
-        assert_eq!(s.bookmarks.get(&'a'), Some(&42));
+        assert_eq!(s.bookmarks[bookmark_idx('a').unwrap()], Some(42));
         // Move cursor away.
         s.cursor = Some(10);
         // Now jump back.
@@ -1102,8 +1141,8 @@ mod tests {
         s.cursor = Some(7);
         let _ = s.handle_key(KeyCode::Char('m'), KeyModifiers::NONE, b"");
         let _ = s.handle_key(KeyCode::Char('Z'), KeyModifiers::NONE, b"");
-        assert_eq!(s.bookmarks.get(&'z'), Some(&7));
-        assert!(!s.bookmarks.contains_key(&'Z'));
+        assert_eq!(s.bookmarks[bookmark_idx('z').unwrap()], Some(7));
+        assert_eq!(s.bookmarks[bookmark_idx('Z').unwrap()], Some(7));
     }
 
     #[test]
@@ -1121,7 +1160,7 @@ mod tests {
         let mut s = state(80);
         let _ = s.handle_key(KeyCode::Char('m'), KeyModifiers::NONE, b"");
         let _ = s.handle_key(KeyCode::Char('5'), KeyModifiers::NONE, b"");
-        assert!(s.bookmarks.is_empty());
+        assert!(s.bookmarks.iter().all(Option::is_none));
         assert!(
             s.status_message
                 .as_deref()
@@ -1136,7 +1175,7 @@ mod tests {
         s.cursor = Some(17);
         let _ = s.handle_key(KeyCode::Char('m'), KeyModifiers::NONE, b"");
         let _ = s.handle_key(KeyCode::Esc, KeyModifiers::NONE, b"");
-        assert!(s.bookmarks.is_empty());
+        assert!(s.bookmarks.iter().all(Option::is_none));
         assert!(matches!(s.mode, Mode::Normal));
     }
 
@@ -1237,8 +1276,8 @@ mod tests {
         assert_eq!(s.cursor, Some(42));
         assert_eq!(s.lens_mode, LensMode::Cuneiform);
         assert!(s.lens.is_some());
-        assert_eq!(s.bookmarks.get(&'a'), Some(&10));
-        assert_eq!(s.bookmarks.get(&'z'), Some(&500));
+        assert_eq!(s.bookmarks[bookmark_idx('a').unwrap()], Some(10));
+        assert_eq!(s.bookmarks[bookmark_idx('z').unwrap()], Some(500));
     }
 
     #[test]
@@ -1256,8 +1295,8 @@ mod tests {
         assert_eq!(s.cursor, Some(15));
         assert_eq!(s.scroll, 1);
         // Out-of-range bookmark is dropped silently.
-        assert_eq!(s.bookmarks.get(&'a'), Some(&5));
-        assert!(!s.bookmarks.contains_key(&'b'));
+        assert_eq!(s.bookmarks[bookmark_idx('a').unwrap()], Some(5));
+        assert_eq!(s.bookmarks[bookmark_idx('b').unwrap()], None);
     }
 
     #[test]
@@ -1266,8 +1305,8 @@ mod tests {
         s.scroll = 3;
         s.cursor = Some(25);
         s.lens_mode = LensMode::Tablet;
-        s.bookmarks.insert('m', 42);
-        s.bookmarks.insert('a', 10);
+        s.bookmarks[bookmark_idx('m').unwrap()] = Some(42);
+        s.bookmarks[bookmark_idx('a').unwrap()] = Some(10);
 
         let snap = s.snapshot();
         assert_eq!(snap.scroll, 3);

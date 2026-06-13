@@ -30,3 +30,10 @@ path = "fuzz_targets/pattern_from_str.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "decode_stream"
+path = "fuzz_targets/decode_stream.rs"
+test = false
+doc = false
+bench = false

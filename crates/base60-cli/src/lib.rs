@@ -54,7 +54,8 @@ pub mod __test_hooks {
 #[doc(hidden)]
 #[cfg(fuzzing)]
 pub mod __fuzz {
-    pub use crate::decode::{RUN_LEN, parse_run};
+    pub use crate::cli::InputFormat;
+    pub use crate::decode::{RUN_LEN, decode_stream, parse_run};
     pub use crate::search::Pattern;
 }
 
@@ -95,28 +96,35 @@ pub fn run() -> Result<()> {
 }
 
 fn run_view(view: &ViewArgs) -> Result<()> {
-    // Streaming stdin path for Ansi/Plain — bounded memory. Bypasses
-    // `reader::load` so the entire input is never buffered at once.
-    if view.file.is_none()
-        && !view.interactive
-        && matches!(view.format, Format::Ansi | Format::Plain)
-    {
+    // Streaming stdin path — bounded memory. Bypasses `reader::load` so
+    // the entire input is never buffered at once.
+    if view.file.is_none() && !view.interactive {
         let stdout = stdout();
         let is_tty = stdout.is_terminal();
-        let palette = match view.format {
-            Format::Plain => &color::PALETTE_NONE,
-            _ => pick_palette(view.color, is_tty),
-        };
         let lens = cli::build_lens(view.lens, view.time_scale, view.purist);
         let lens_ref: Option<&dyn Lens> = lens.as_deref();
-        let result = dump::dump_reader(
-            stdin(),
-            view.skip,
-            view.length,
-            stdout.lock(),
-            palette,
-            lens_ref,
-        );
+        let result = match view.format {
+            Format::Ansi | Format::Plain => {
+                let palette = match view.format {
+                    Format::Plain => &color::PALETTE_NONE,
+                    _ => pick_palette(view.color, is_tty),
+                };
+                dump::dump_reader(
+                    stdin(),
+                    view.skip,
+                    view.length,
+                    stdout.lock(),
+                    palette,
+                    lens_ref,
+                )
+            }
+            Format::Json => {
+                format::emit_json_stream(stdin(), view.skip, view.length, stdout.lock(), lens_ref)
+            }
+            Format::Html => {
+                format::emit_html_stream(stdin(), view.skip, view.length, stdout.lock(), lens_ref)
+            }
+        };
         return match result {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),

@@ -8,6 +8,20 @@
 /// Number of base-60 digits required to represent any [`u64`].
 pub const DIGITS: usize = 11;
 
+/// Pre-computed two-byte ASCII pairs for base-60 digits `00..59`.
+///
+/// `DIGIT_PAIRS[d]` is `[b'0' + d / 10, b'0' + d % 10]`, ready for
+/// direct `write_all` without per-character arithmetic.
+pub const DIGIT_PAIRS: [[u8; 2]; 60] = {
+    let mut table = [[0u8; 2]; 60];
+    let mut d: u8 = 0;
+    while d < 60 {
+        table[d as usize] = [b'0' + d / 10, b'0' + d % 10];
+        d += 1;
+    }
+    table
+};
+
 /// Convert `n` into its base-60 digits, most-significant first.
 ///
 /// Index `0` holds the highest-order digit; index `DIGITS - 1` holds the

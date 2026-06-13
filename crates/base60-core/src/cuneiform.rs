@@ -35,7 +35,7 @@ const ZERO_MARK: &str = "𒑰";
 #[must_use]
 pub fn ascii_pair(d: u8) -> [u8; 2] {
     debug_assert!(d < 60);
-    [b'0' + d / 10, b'0' + d % 10]
+    crate::convert::DIGIT_PAIRS[d as usize]
 }
 
 static GLYPHS: LazyLock<[String; 60]> = LazyLock::new(|| {
