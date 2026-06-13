@@ -672,7 +672,7 @@ dependencies = [
 
 [[package]]
 name = "gar"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -691,7 +691,7 @@ dependencies = [
 
 [[package]]
 name = "gar-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "criterion",
  "serial_test",
@@ -2301,7 +2301,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "walkdir",
 ]
