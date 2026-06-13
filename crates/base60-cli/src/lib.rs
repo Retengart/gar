@@ -23,7 +23,7 @@ use clap::Parser;
 use cli::{AnalyzeArgs, ColorChoice, Command, CompletionsArgs, DecodeArgs, ViewArgs};
 use color::Palette;
 use std::fs::File;
-use std::io::{BufReader, BufWriter, IsTerminal, stdout};
+use std::io::{BufReader, BufWriter, IsTerminal, stdin, stdout};
 
 pub use cli::{Format, LensMode};
 
@@ -95,6 +95,35 @@ pub fn run() -> Result<()> {
 }
 
 fn run_view(view: &ViewArgs) -> Result<()> {
+    // Streaming stdin path for Ansi/Plain — bounded memory. Bypasses
+    // `reader::load` so the entire input is never buffered at once.
+    if view.file.is_none()
+        && !view.interactive
+        && matches!(view.format, Format::Ansi | Format::Plain)
+    {
+        let stdout = stdout();
+        let is_tty = stdout.is_terminal();
+        let palette = match view.format {
+            Format::Plain => &color::PALETTE_NONE,
+            _ => pick_palette(view.color, is_tty),
+        };
+        let lens = cli::build_lens(view.lens, view.time_scale, view.purist);
+        let lens_ref: Option<&dyn Lens> = lens.as_deref();
+        let result = dump::dump_reader(
+            stdin(),
+            view.skip,
+            view.length,
+            stdout.lock(),
+            palette,
+            lens_ref,
+        );
+        return match result {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
+            Err(e) => Err(e.into()),
+        };
+    }
+
     let bytes = reader::load(view.file.as_deref(), view.skip, view.length)?;
 
     if view.interactive {
@@ -183,7 +212,7 @@ fn run_decode(args: &DecodeArgs) -> Result<()> {
         let file = File::open(path)?;
         decode::decode_stream(BufReader::new(file), &mut out, args.input_format)
     } else {
-        let stdin = std::io::stdin();
+        let stdin = stdin();
         decode::decode_stream(stdin.lock(), &mut out, args.input_format)
     };
     match result {

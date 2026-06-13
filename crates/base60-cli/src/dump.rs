@@ -16,7 +16,7 @@ use base60_core::convert::{DIGITS, u64_to_base60};
 use base60_core::lens::Lens;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use std::io::{self, BufWriter, Write};
+use std::io::{self, BufRead, BufReader, BufWriter, Read, Write};
 
 /// Width of the zero-padded hex offset column.
 const OFFSET_WIDTH: usize = 8;
@@ -142,6 +142,84 @@ pub fn dump_all<W: Write>(
     // an ASCII digit nor a colon, so the scanner cannot construct a run
     // that overlaps it. Always emitted, including for empty input (D-02).
     writeln!(out, "# bytes=0x{:x}", data.len())?;
+    out.flush()
+}
+
+/// Stream dump output from a reader, processing 8-byte chunks as they arrive.
+///
+/// Unlike [`dump_all`], this function never materialises the full input in
+/// memory. It reads in [`CHUNK`]-sized increments and writes each dump
+/// line immediately, making it suitable for piped stdin where the input
+/// size is unbounded.
+///
+/// `skip` is both the number of bytes to discard from the start and the
+/// displayed offset of the first line. `length` optionally caps the
+/// number of bytes to process after skipping.
+///
+/// # Errors
+///
+/// Propagates any [`io::Error`] returned by the underlying reader or writer.
+pub(crate) fn dump_reader<R: Read, W: Write>(
+    reader: R,
+    skip: u64,
+    length: Option<u64>,
+    w: W,
+    palette: &Palette,
+    lens: Option<&dyn Lens>,
+) -> io::Result<()> {
+    let mut reader = BufReader::new(reader);
+    let mut out = BufWriter::new(w);
+
+    // Discard `skip` bytes from the start.
+    let mut to_skip = skip;
+    while to_skip > 0 {
+        let buf = reader.fill_buf()?;
+        if buf.is_empty() {
+            break;
+        }
+        let consume = usize::try_from(to_skip)
+            .unwrap_or(usize::MAX)
+            .min(buf.len());
+        reader.consume(consume);
+        to_skip -= consume as u64;
+    }
+
+    let mut offset = skip;
+    let mut total: u64 = 0;
+    let mut remaining = length;
+    let mut chunk_buf = [0u8; CHUNK];
+
+    loop {
+        if remaining.is_some_and(|r| r == 0) {
+            break;
+        }
+
+        let mut filled = 0;
+        while filled < CHUNK {
+            match reader.read(&mut chunk_buf[filled..]) {
+                Ok(0) => break,
+                Ok(n) => filled += n,
+                Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+                Err(e) => return Err(e),
+            }
+        }
+
+        if filled == 0 {
+            break;
+        }
+
+        if let Some(rem) = remaining.as_mut() {
+            let actual = filled.min(usize::try_from(*rem).unwrap_or(usize::MAX));
+            filled = actual;
+            *rem -= actual as u64;
+        }
+
+        total += filled as u64;
+        write_line(&mut out, offset, &chunk_buf[..filled], palette, lens)?;
+        offset = offset.saturating_add(CHUNK as u64);
+    }
+
+    writeln!(out, "# bytes=0x{total:x}")?;
     out.flush()
 }
 
@@ -462,5 +540,73 @@ mod tests {
                 .add_modifier
                 .contains(Modifier::REVERSED)
         );
+    }
+
+    #[test]
+    fn dump_reader_matches_dump_all_for_full_input() {
+        let data: Vec<u8> = (0..24).collect();
+        let mut buf = Vec::new();
+        dump_reader(
+            data.as_slice(),
+            0,
+            None,
+            &mut buf,
+            &PALETTE_NONE,
+            None,
+        )
+        .unwrap();
+        let streamed = String::from_utf8(buf).unwrap();
+
+        let mut buf2 = Vec::new();
+        dump_all(&data, 0, &mut buf2, &PALETTE_NONE, None).unwrap();
+        let buffered = String::from_utf8(buf2).unwrap();
+
+        assert_eq!(streamed, buffered);
+    }
+
+    #[test]
+    fn dump_reader_emits_trailer_for_empty_input() {
+        let mut buf = Vec::new();
+        dump_reader(b"".as_slice(), 0, None, &mut buf, &PALETTE_NONE, None).unwrap();
+        assert_eq!(String::from_utf8(buf).unwrap(), "# bytes=0x0\n");
+    }
+
+    #[test]
+    fn dump_reader_respects_skip() {
+        let data: Vec<u8> = (0..24).collect();
+        let mut buf = Vec::new();
+        dump_reader(
+            data.as_slice(),
+            8,
+            None,
+            &mut buf,
+            &PALETTE_NONE,
+            None,
+        )
+        .unwrap();
+        let rendered = String::from_utf8(buf).unwrap();
+        // First line offset should be 8 (the skip amount).
+        assert!(rendered.starts_with("00000008  "));
+        // Trailer should report 16 bytes (24 - 8 skipped).
+        assert!(rendered.contains("# bytes=0x10\n"));
+    }
+
+    #[test]
+    fn dump_reader_respects_length() {
+        let data: Vec<u8> = (0..24).collect();
+        let mut buf = Vec::new();
+        dump_reader(
+            data.as_slice(),
+            0,
+            Some(16),
+            &mut buf,
+            &PALETTE_NONE,
+            None,
+        )
+        .unwrap();
+        let rendered = String::from_utf8(buf).unwrap();
+        // Two 8-byte lines + trailer.
+        assert_eq!(rendered.lines().count(), 3);
+        assert!(rendered.contains("# bytes=0x10\n"));
     }
 }

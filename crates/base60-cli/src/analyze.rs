@@ -9,11 +9,13 @@
 //!   low-entropy (`< 1 bit/byte`, likely padding) or high-entropy
 //!   (`> 7.5 bits/byte`, likely compressed/encrypted).
 //!
-//! The scan is single-pass per concern: overall stats walk the data once,
-//! window entropies walk it once more. Both are O(n) with `window_size`
-//! factored out. Memory footprint is bounded: the global histogram is
-//! fixed-size, and only one window worth of counts lives on the stack at
-//! a time.
+//! The scan is single-pass for window entropy, region classification,
+//! and summary stats — all three are computed in the same loop. Overall
+//! byte frequency and ASCII regions each require their own pass over the
+//! data (different axes). All passes are O(n) with `window_size` factored
+//! out. Memory footprint is bounded: the global histogram is fixed-size,
+//! only one window worth of counts lives on the stack at a time, and
+//! summary statistics use an online accumulator.
 
 use std::io::{self, Write};
 
@@ -63,6 +65,49 @@ pub(crate) enum RegionKind {
     LowEntropy,
 }
 
+/// Online accumulator for per-window Shannon entropy statistics.
+///
+/// Tracks min, max, and running sum in a single pass without storing
+/// individual window values, keeping memory use bounded regardless of
+/// input size.
+#[derive(Copy, Clone, Debug)]
+struct EntropyStats {
+    min: f32,
+    max: f32,
+    sum: f64,
+    count: usize,
+}
+
+impl EntropyStats {
+    const fn new() -> Self {
+        Self {
+            min: f32::INFINITY,
+            max: f32::NEG_INFINITY,
+            sum: 0.0,
+            count: 0,
+        }
+    }
+
+    fn push(&mut self, h: f32) {
+        if h < self.min {
+            self.min = h;
+        }
+        if h > self.max {
+            self.max = h;
+        }
+        self.sum += f64::from(h);
+        self.count += 1;
+    }
+
+    #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+    fn mean(&self) -> f32 {
+        if self.count == 0 {
+            return 0.0;
+        }
+        (self.sum / self.count as f64).clamp(0.0, 8.0) as f32
+    }
+}
+
 /// Computed view over a byte slice.
 #[derive(Clone, Debug)]
 pub(crate) struct Analysis {
@@ -81,6 +126,8 @@ pub(crate) struct Analysis {
     pub(crate) byte_freq: Box<[u32; 256]>,
     /// Disjoint classified regions, in start-offset order.
     pub(crate) regions: Vec<Region>,
+    /// Min, max, mean of per-window entropy values.
+    pub(crate) entropy_stats: (f32, f32, f32),
 }
 
 /// Run the full analysis pipeline on `data`.
@@ -95,8 +142,46 @@ pub(crate) fn analyze(data: &[u8], window_size: usize) -> Analysis {
         byte_freq[b as usize] = byte_freq[b as usize].saturating_add(1);
     }
     let entropy = shannon_entropy(&byte_freq, data.len());
-    let entropy_windows = window_entropies(data, window);
-    let regions = detect_regions(data, &entropy_windows, window);
+
+    // Single pass: compute per-window entropy, detect entropy-tier
+    // regions, and accumulate min/max/mean stats simultaneously.
+    let complete = data.len() / window;
+    let mut entropy_windows = Vec::with_capacity(complete);
+    let mut stats = EntropyStats::new();
+    let mut regions = Vec::new();
+
+    for (idx, chunk) in data.chunks_exact(window).enumerate() {
+        let mut hist = [0_u32; 256];
+        for &b in chunk {
+            hist[b as usize] += 1;
+        }
+        let h = shannon_entropy(&hist, chunk.len());
+        entropy_windows.push(h);
+        stats.push(h);
+
+        let kind = if h >= HIGH_ENTROPY {
+            RegionKind::HighEntropy
+        } else if h <= LOW_ENTROPY {
+            RegionKind::LowEntropy
+        } else {
+            continue;
+        };
+        let start = idx * window;
+        regions.push(Region {
+            start,
+            end: start + window,
+            kind,
+        });
+    }
+
+    detect_ascii_regions(data, &mut regions);
+    regions.sort_by_key(|r| r.start);
+
+    let entropy_stats = if stats.count == 0 {
+        (0.0, 0.0, 0.0)
+    } else {
+        (stats.min, stats.max, stats.mean())
+    };
 
     Analysis {
         total_bytes: data.len(),
@@ -105,6 +190,7 @@ pub(crate) fn analyze(data: &[u8], window_size: usize) -> Analysis {
         entropy_windows,
         byte_freq,
         regions,
+        entropy_stats,
     }
 }
 
@@ -134,26 +220,8 @@ fn shannon_entropy(hist: &[u32; 256], total: usize) -> f32 {
     out.clamp(0.0, 8.0)
 }
 
-/// Per-window Shannon entropy, skipping the trailing partial window.
-fn window_entropies(data: &[u8], window: usize) -> Vec<f32> {
-    let complete = data.len() / window;
-    let mut out = Vec::with_capacity(complete);
-    for chunk in data.chunks_exact(window) {
-        let mut hist = [0_u32; 256];
-        for &b in chunk {
-            hist[b as usize] += 1;
-        }
-        out.push(shannon_entropy(&hist, chunk.len()));
-    }
-    out
-}
-
-/// Union of ASCII-run detection and entropy-tier classification, sorted by
-/// `start`. The two sources never overlap by construction because ASCII
-/// ranges live inside original byte space and entropy tiers live on
-/// window-aligned spans.
-fn detect_regions(data: &[u8], entropy_windows: &[f32], window: usize) -> Vec<Region> {
-    let mut regions = Vec::new();
+/// ASCII-run detection, appending to an existing region vec.
+fn detect_ascii_regions(data: &[u8], regions: &mut Vec<Region>) {
     let mut run_start: Option<usize> = None;
 
     for (i, &b) in data.iter().enumerate() {
@@ -178,22 +246,6 @@ fn detect_regions(data: &[u8], entropy_windows: &[f32], window: usize) -> Vec<Re
             kind: RegionKind::Ascii,
         });
     }
-
-    for (idx, &h) in entropy_windows.iter().enumerate() {
-        let kind = if h >= HIGH_ENTROPY {
-            RegionKind::HighEntropy
-        } else if h <= LOW_ENTROPY {
-            RegionKind::LowEntropy
-        } else {
-            continue;
-        };
-        let start = idx * window;
-        let end = start + window;
-        regions.push(Region { start, end, kind });
-    }
-
-    regions.sort_by_key(|r| r.start);
-    regions
 }
 
 #[inline]
@@ -213,7 +265,7 @@ pub(crate) fn write_summary<W: Write>(a: &Analysis, data: &[u8], w: &mut W) -> i
     writeln!(w, "windows       {}", a.entropy_windows.len())?;
 
     if !a.entropy_windows.is_empty() {
-        let (min, max, mean) = entropy_stats(&a.entropy_windows);
+        let (min, max, mean) = a.entropy_stats;
         writeln!(w, "window range  [{min:.3}, {max:.3}]  mean {mean:.3}")?;
     }
 
@@ -263,24 +315,6 @@ pub(crate) fn write_summary<W: Write>(a: &Analysis, data: &[u8], w: &mut W) -> i
     }
 
     Ok(())
-}
-
-fn entropy_stats(ws: &[f32]) -> (f32, f32, f32) {
-    let mut min = f32::INFINITY;
-    let mut max = f32::NEG_INFINITY;
-    let mut sum = 0.0_f64;
-    for &h in ws {
-        if h < min {
-            min = h;
-        }
-        if h > max {
-            max = h;
-        }
-        sum += f64::from(h);
-    }
-    #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
-    let mean = (sum / ws.len() as f64) as f32;
-    (min, max, mean)
 }
 
 fn region_counts(regions: &[Region]) -> (usize, usize, usize) {
