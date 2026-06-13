@@ -79,8 +79,10 @@ jobs:
         include:
           - arch: x86_64
             target: x86_64-pc-windows-msvc
+            upx: true
           - arch: aarch64
             target: aarch64-pc-windows-msvc
+            upx: false
     env:
       UPX_SHA256: 41c7492edeed0f7e67d347ca9e8d2131e2af7ca7a7695f92283a8e655c251c13
     steps:
@@ -94,6 +96,7 @@ jobs:
       - name: Build
         run: cargo build --profile release-lto --locked --target ${{ matrix.target }}
       - name: Compress with UPX
+        if: matrix.upx
         shell: pwsh
         run: |
           Invoke-WebRequest -OutFile upx.zip "https://github.com/upx/upx/releases/download/v${{ env.UPX_VERSION }}/upx-${{ env.UPX_VERSION }}-win64.zip"
