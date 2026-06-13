@@ -122,6 +122,15 @@ where
     loop {
         terminal.draw(|frame| state.draw(frame, data, base_offset))?;
 
+        // Collect background analysis result without blocking the frame.
+        if state.analysis.is_none()
+            && let Some(rx) = &state.analysis_rx
+            && let Ok(a) = rx.try_recv()
+        {
+            state.analysis = Some(a);
+            state.analysis_rx = None;
+        }
+
         let Some(event) = next_event()? else {
             // Event source exhausted — persist state on clean shutdown.
             if let Some(path) = &persist_path {
@@ -185,8 +194,11 @@ struct ViewState {
     /// Precomputed statistical analysis of the loaded slice. Used by
     /// semantic jumps (`]p`, `]z`, `]e`) to locate the next/prev
     /// ASCII run, zero fill, or entropy spike without rescanning on
-    /// every keystroke.
-    analysis: Analysis,
+    /// every keystroke. `None` until the background thread delivers.
+    analysis: Option<Analysis>,
+    /// Receiver for the background analysis thread. `None` once the
+    /// result has been collected.
+    analysis_rx: Option<std::sync::mpsc::Receiver<Analysis>>,
 }
 
 impl ViewState {
@@ -207,10 +219,35 @@ impl ViewState {
             match_idx: usize::MAX,
             status_message: None,
             bookmarks: HashMap::new(),
-            // Eager: one pass at launch is cheaper than racing the
-            // viewport on every semantic-jump keystroke.
-            analysis: analyze::analyze(data, DEFAULT_WINDOW),
+            analysis: None,
+            analysis_rx: {
+                let (tx, rx) = std::sync::mpsc::channel();
+                let owned = data.to_vec();
+                std::thread::spawn(move || {
+                    let _ = tx.send(analyze::analyze(&owned, DEFAULT_WINDOW));
+                });
+                Some(rx)
+            },
         }
+    }
+
+    /// Construct with eagerly-computed analysis. Used only by tests so
+    /// semantic-jump assertions don't race the background thread.
+    #[cfg(test)]
+    fn new_with_analysis(
+        data: &[u8],
+        initial_mode: LensMode,
+        scale: TimeScale,
+        purist: bool,
+    ) -> Self {
+        let mut s = Self::new(data, initial_mode, scale, purist);
+        // Drain the background result synchronously.
+        if let Some(rx) = s.analysis_rx.take()
+            && let Ok(a) = rx.recv()
+        {
+            s.analysis = Some(a);
+        }
+        s
     }
 
     fn draw(&mut self, frame: &mut ratatui::Frame<'_>, data: &[u8], base_offset: u64) {
@@ -455,15 +492,20 @@ impl ViewState {
         let direction_label = if forward { "next" } else { "prev" };
         let kind_label = region_label(kind);
 
+        let Some(analysis) = &self.analysis else {
+            self.status_message = Some("analysing... (jump deferred)".to_owned());
+            return;
+        };
+
         let candidate = if forward {
-            self.analysis
+            analysis
                 .regions
                 .iter()
                 .find(|r| r.kind == kind && r.start > here)
         } else {
             // `rev()` walks regions right-to-left; we want the last region
             // starting strictly before the cursor.
-            self.analysis
+            analysis
                 .regions
                 .iter()
                 .rev()
@@ -1115,7 +1157,7 @@ mod tests {
         data.extend_from_slice(b"Hello, world!"); // 10..23, len 13 ≥ 4 → Ascii region
         data.extend_from_slice(&[0_u8; 10]);
 
-        let mut s = ViewState::new(&data, LensMode::None, TimeScale::Gar, false);
+        let mut s = ViewState::new_with_analysis(&data, LensMode::None, TimeScale::Gar, false);
         s.cursor = Some(0);
 
         let _ = s.handle_key(KeyCode::Char(']'), KeyModifiers::NONE, &data);
@@ -1135,7 +1177,7 @@ mod tests {
         data.extend_from_slice(b"late string"); // offset 32 (22 bytes in)
         data.extend_from_slice(&[0_u8; 10]);
 
-        let mut s = ViewState::new(&data, LensMode::None, TimeScale::Gar, false);
+        let mut s = ViewState::new_with_analysis(&data, LensMode::None, TimeScale::Gar, false);
         s.cursor = Some(50);
         let _ = s.handle_key(KeyCode::Char('['), KeyModifiers::NONE, &data);
         let _ = s.handle_key(KeyCode::Char('p'), KeyModifiers::NONE, &data);
@@ -1146,7 +1188,7 @@ mod tests {
     #[test]
     fn semantic_jump_with_no_match_reports_message() {
         let data = vec![0_u8; 10]; // no ASCII regions anywhere
-        let mut s = ViewState::new(&data, LensMode::None, TimeScale::Gar, false);
+        let mut s = ViewState::new_with_analysis(&data, LensMode::None, TimeScale::Gar, false);
         s.cursor = Some(0);
 
         let _ = s.handle_key(KeyCode::Char(']'), KeyModifiers::NONE, &data);
