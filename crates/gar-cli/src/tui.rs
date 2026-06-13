@@ -22,6 +22,11 @@ use std::path::{Path, PathBuf};
 
 const TITLE: &str = " 𒁹 gar — hjkl  L:lens  /:find  m/':mark  ]/[ pze:jump  q:quit 𒌋 ";
 
+/// Maximum bytes fed to the background analysis thread. Keeps startup
+/// fast for huge files — semantic jumps cover this prefix; the cursor
+/// and scroll work across the full input regardless.
+const MAX_ANALYSIS_BYTES: usize = 64 * 1024 * 1024;
+
 /// Modal state of the viewer. `Normal` is the cursor-driven default; the
 /// other variants trap almost every keypress so the user can compose an
 /// input without accidentally scrolling.
@@ -225,7 +230,8 @@ impl ViewState {
             analysis: None,
             analysis_rx: {
                 let (tx, rx) = std::sync::mpsc::channel();
-                let owned = data.to_vec();
+                let slice = &data[..data.len().min(MAX_ANALYSIS_BYTES)];
+                let owned = slice.to_vec();
                 std::thread::spawn(move || {
                     let _ = tx.send(analyze::analyze(&owned, DEFAULT_WINDOW));
                 });
