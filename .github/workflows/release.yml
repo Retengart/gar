@@ -1,0 +1,131 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  UPX_VERSION: "5.1.0"
+
+jobs:
+  build-linux:
+    name: build (linux / ${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            upx_pkg: upx-5.1.0-amd64_linux
+            upx_sha256: 946b7269d0f7fcc1c5da0f771ea7fe9c0fed3534cf41d285980830019b4bc95e
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            upx_pkg: upx-5.1.0-arm64_linux
+            upx_sha256: 222dde34dfa3244a31b06c97820ee651515270e524736f532ac8456783afe76e
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-linux-${{ matrix.arch }}
+      - name: Build
+        run: cargo build --profile release-lto --locked --target ${{ matrix.target }}
+      - name: Compress with UPX
+        run: |
+          wget -qO upx.tar.xz "https://github.com/upx/upx/releases/download/v${{ env.UPX_VERSION }}/${{ matrix.upx_pkg }}.tar.xz"
+          echo "${{ matrix.upx_sha256 }}  upx.tar.xz" | sha256sum --check --strict --status
+          tar -xf upx.tar.xz
+          ./${{ matrix.upx_pkg }}/upx --lzma "target/${{ matrix.target }}/release-lto/gar"
+      - name: Rename
+        run: cp target/${{ matrix.target }}/release-lto/gar gar-linux-${{ matrix.arch }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gar-linux-${{ matrix.arch }}
+          path: gar-linux-${{ matrix.arch }}
+
+  build-macos:
+    name: build (macos / aarch64)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-macos-aarch64
+      - name: Build
+        run: cargo build --profile release-lto --locked --target aarch64-apple-darwin
+      - name: Rename
+        run: cp target/aarch64-apple-darwin/release-lto/gar gar-macos-aarch64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gar-macos-aarch64
+          path: gar-macos-aarch64
+
+  build-windows:
+    name: build (windows / ${{ matrix.arch }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            target: x86_64-pc-windows-msvc
+          - arch: aarch64
+            target: aarch64-pc-windows-msvc
+    env:
+      UPX_SHA256: 41c7492edeed0f7e67d347ca9e8d2131e2af7ca7a7695f92283a8e655c251c13
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-windows-${{ matrix.arch }}
+      - name: Build
+        run: cargo build --profile release-lto --locked --target ${{ matrix.target }}
+      - name: Compress with UPX
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -OutFile upx.zip "https://github.com/upx/upx/releases/download/v${{ env.UPX_VERSION }}/upx-${{ env.UPX_VERSION }}-win64.zip"
+          $actual = (Get-FileHash upx.zip -Algorithm SHA256).Hash.ToLower()
+          if ($actual -ne $env:UPX_SHA256) { throw "UPX checksum mismatch: expected $env:UPX_SHA256, got $actual" }
+          Expand-Archive -DestinationPath upx upx.zip
+          upx/upx-${{ env.UPX_VERSION }}-win64/upx.exe --lzma "target/${{ matrix.target }}/release-lto/gar.exe"
+      - name: Rename
+        shell: pwsh
+        run: cp target/${{ matrix.target }}/release-lto/gar.exe gar-windows-${{ matrix.arch }}.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gar-windows-${{ matrix.arch }}.exe
+          path: gar-windows-${{ matrix.arch }}.exe
+
+  release:
+    name: release
+    needs: [build-linux, build-macos, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --repo "${{ github.repository }}" \
+            --title "${{ github.ref_name }}" \
+            --generate-notes \
+            artifacts/*
