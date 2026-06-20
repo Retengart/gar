@@ -52,7 +52,7 @@ static GLYPHS: LazyLock<[String; 60]> = LazyLock::new(|| {
         let d = i as u8;
         let tens = usize::from(d / 10);
         let ones = usize::from(d % 10);
-        let mut s = String::with_capacity((tens + ones) * AS_WEDGE.len());
+        let mut s = String::with_capacity(tens * U_WEDGE.len() + ones * AS_WEDGE.len());
         for _ in 0..tens {
             s.push_str(U_WEDGE);
         }
