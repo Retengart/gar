@@ -73,6 +73,23 @@ fn release_context_values_are_not_interpolated_into_shell_source() {
 }
 
 #[test]
+fn windows_release_explicitly_installs_the_cross_target() {
+    let workflow = read(".github/workflows/release.yml");
+    let target_install = concat!(
+        "- name: Ensure Rust target\n",
+        "        shell: bash\n",
+        "        env:\n",
+        "          RUST_TARGET: ${{ matrix.target }}\n",
+        "        run: rustup target add --toolchain stable \"$RUST_TARGET\"",
+    );
+
+    assert!(
+        workflow.contains(target_install),
+        "the Windows runner may lose a cross-target while updating its preinstalled stable toolchain; reinstall it explicitly and pass the matrix value as data"
+    );
+}
+
+#[test]
 fn packaged_cli_requires_the_matching_core_version() {
     let workspace = read("Cargo.toml");
     let manifest = read("crates/gar-cli/Cargo.toml");

@@ -95,6 +95,11 @@ jobs:
         with:
           toolchain: stable
           targets: ${{ matrix.target }}
+      - name: Ensure Rust target
+        shell: bash
+        env:
+          RUST_TARGET: ${{ matrix.target }}
+        run: rustup target add --toolchain stable "$RUST_TARGET"
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           key: release-windows-${{ matrix.arch }}
