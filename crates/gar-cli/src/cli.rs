@@ -327,6 +327,10 @@ pub(crate) struct AnalyzeArgs {
     /// Values below the analyser's internal minimum (`64`) are clamped.
     #[arg(long, default_value_t = crate::analyze::DEFAULT_WINDOW, value_name = "N")]
     pub(crate) window: usize,
+
+    /// Find a byte pattern using the TUI search grammar (`hex:`, `str:`, or auto).
+    #[arg(long, value_name = "PATTERN")]
+    pub(crate) pattern: Option<String>,
 }
 
 /// Arguments for `gar decode`.

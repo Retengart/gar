@@ -21,7 +21,7 @@ mod reader;
 mod search;
 mod tui;
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use clap::CommandFactory;
 use clap::Parser;
 use cli::{AnalyzeArgs, ColorChoice, Command, CompletionsArgs, DecodeArgs, DiffArgs, ViewArgs};
@@ -206,11 +206,26 @@ fn run_view(view: &ViewArgs) -> Result<()> {
 }
 
 fn run_analyze(args: &AnalyzeArgs) -> Result<()> {
+    let pattern = args
+        .pattern
+        .as_deref()
+        .map(str::parse::<search::Pattern>)
+        .transpose()
+        .map_err(|error| anyhow!("invalid pattern: {error:?}"))?;
     let bytes = reader::load(args.file.as_deref(), args.skip, args.length)?;
     let analysis = analyze::analyze(bytes.as_slice(), args.window);
+    let matches = pattern
+        .as_ref()
+        .map(|pattern| search::find_all(bytes.as_slice(), &pattern.0));
     let stdout = stdout();
     let mut out = BufWriter::new(stdout.lock());
-    match analyze::write_summary(&analysis, bytes.as_slice(), &mut out) {
+    let result =
+        analyze::write_summary(&analysis, bytes.as_slice(), args.skip, &mut out).and_then(|()| {
+            matches.as_ref().map_or(Ok(()), |matches| {
+                analyze::write_matches(matches, args.skip, &mut out)
+            })
+        });
+    match result {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
         Err(e) => Err(e.into()),

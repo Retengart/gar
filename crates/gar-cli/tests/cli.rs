@@ -121,6 +121,67 @@ fn diff_exits_zero_on_broken_pipe() {
 }
 
 // ---------------------------------------------------------------------
+// Analyze pattern reporting: same grammar as TUI search, absolute range
+// offsets, and bounded output for repetitive inputs.
+// ---------------------------------------------------------------------
+
+#[test]
+fn analyze_pattern_combines_range_and_absolute_match_offsets() {
+    let file = temp_file(b"zzABxxAByy");
+
+    gar_cmd()
+        .arg("analyze")
+        .args(["--skip", "3", "--length", "5", "--pattern", "hex:4142"])
+        .arg(file.path())
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("bytes         5"))
+        .stdout(predicates::str::contains("matches       1"))
+        .stdout(predicates::str::contains("0x00000003..0x00000008"))
+        .stdout(predicates::str::contains("0x00000006"));
+}
+
+#[test]
+fn analyze_pattern_accepts_string_grammar() {
+    let file = temp_file(b"deadbeef deadbeef");
+
+    gar_cmd()
+        .arg("analyze")
+        .args(["--pattern", "str:deadbeef"])
+        .arg(file.path())
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("matches       2"));
+}
+
+#[test]
+fn analyze_pattern_rejects_invalid_explicit_hex() {
+    let file = temp_file(b"anything");
+
+    gar_cmd()
+        .arg("analyze")
+        .args(["--pattern", "hex:abc"])
+        .arg(file.path())
+        .assert()
+        .code(2)
+        .stderr(predicates::str::contains("invalid pattern"));
+}
+
+#[test]
+fn analyze_pattern_limits_offsets_and_reports_omitted_matches() {
+    let file = temp_file(&b"AB".repeat(25));
+
+    gar_cmd()
+        .arg("analyze")
+        .args(["--pattern", "str:AB"])
+        .arg(file.path())
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("matches       25"))
+        .stdout(predicates::str::contains("... 5 more"));
+}
+
+// ---------------------------------------------------------------------
 // Stdin piping
 // ---------------------------------------------------------------------
 
