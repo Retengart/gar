@@ -11,9 +11,10 @@ the 60-second minute, 360-degree circle, and 24-hour day.
 00000010  00:21:27:26:34:03:50:30:56:25:36  |..>.....|
 ```
 
-It comes with an interactive TUI, statistical analysis, roundtrip
-decoding, four optional overlay lenses (including actual cuneiform), and
-JSON/HTML output for pipeline and report use.
+It comes with an interactive TUI, statistical analysis and pattern search,
+side-by-side file comparison, roundtrip decoding, four optional overlay
+lenses (including actual cuneiform), and JSON/HTML output for pipeline and
+report use.
 
 ## Install
 
@@ -38,6 +39,7 @@ gar --lens=time file.bin         # annotate every row with
 gar --lens=cuneiform /bin/ls     # render digits as 𒁹𒌋 wedges
 gar -i file.bin                  # launch the interactive TUI
 gar analyze /bin/ls              # entropy + ASCII-strings summary
+gar diff old.bin new.bin         # side-by-side base-60 comparison
 gar --format=plain file.bin | gar decode > file.bin.rt
                                     # dump → bytes roundtrip
 ```
@@ -89,6 +91,8 @@ Launches a ratatui-based viewer. All keybinds:
 | `g` / `G` or Home/End    | first / last byte                            |
 | `Ctrl-d` / `Ctrl-u`      | half-page forward / backward                 |
 | PgDn / PgUp              | full page forward / backward                 |
+| `<` / `>`                | pan horizontally by four columns             |
+| `v` / `V`                | pin/unpin comparison view / replace its pin  |
 | `L`                      | cycle lens (none → time → angle → tablet → cuneiform → none) |
 | `/`                      | search (`hex:DEADBEEF`, `str:foo`, `"foo"`, or auto-detect)  |
 | `n` / `N`                | next / previous search match                 |
@@ -97,8 +101,12 @@ Launches a ratatui-based viewer. All keybinds:
 | `[p` / `[z` / `[e`       | previous of the same                         |
 | `q` / Esc                | quit (saves state to `$XDG_STATE_HOME/gar/`)|
 
-State (cursor, scroll, active lens, bookmarks) is persisted per-file
-across runs. Reopening the same file resumes where you left off.
+The status bar reports the visible byte range, cursor offset, total size,
+and percentage position. A pinned comparison splits the available rows
+between the frozen and live viewports; very small terminals show a clear
+fallback message. State (cursor, scroll, active lens, bookmarks) is
+persisted per-file across runs. Reopening the same file resumes where you
+left off.
 
 ### Statistical analysis — `gar analyze FILE`
 
@@ -123,10 +131,24 @@ ascii preview
   ...
 ```
 
-`--window N` tunes the Shannon window size (default 256, clamped to ≥64).
-Detected region kinds: `ascii` (≥4 printable), `high-entropy` (>7.5
-bits/byte, likely compressed/encrypted), `low-entropy` (<1.0, likely
-padding).
+`--skip N` and `--length N` restrict the analysed range while preserving
+absolute offsets in the report. `--window N` tunes the Shannon window size
+(default 256, clamped to ≥64). `--pattern PATTERN` uses the TUI search
+grammar (`hex:DEADBEEF`, `str:foo`, quoted text, or auto-detection), reports
+the total match count, and prints the first 20 absolute offsets. Detected
+region kinds: `ascii` (≥4 printable), `high-entropy` (>7.5 bits/byte,
+likely compressed/encrypted), `low-entropy` (<1.0, likely padding).
+
+### File comparison — `gar diff OLD NEW`
+
+Compares both files in side-by-side base-60 and ASCII rows. The marker after
+each offset is `=` for equal rows, `!` for changed rows, `<` for rows present
+only in `OLD`, and `>` for rows present only in `NEW`. Changed data is
+emphasized according to `--color={auto,always,never}`; automatic color also
+honours `NO_COLOR`, `TERM=dumb`, and non-TTY output.
+
+Exit status is `0` when the files are equal, `1` when they differ, and `2`
+for usage or I/O errors. A downstream closed pipe is treated as success.
 
 ### Decoding — `gar decode`
 
@@ -153,10 +175,11 @@ mkdir -p ~/.zfunc && gar completions zsh > ~/.zfunc/_gar
 `gar-core` exposes the pure-Rust building blocks:
 
 ```rust
-use gar_core::{DIGITS, u64_to_base60, encode_u64, decode_u64};
+use gar_core::{DIGITS, decode_u64, encode_u64, format_chunk, u64_to_base60};
 
 let digits = u64_to_base60(5025);
 assert_eq!(digits[8..], [1, 23, 45]);
+assert_eq!(format_chunk(5025), "00:00:00:00:00:00:00:00:01:23:45");
 
 // URL-safe hash-prefix encoding: u64 → 11-char string using 0-9A-Za-x.
 let prefix = 0xDEAD_BEEF_u64;
