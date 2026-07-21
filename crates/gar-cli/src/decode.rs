@@ -292,8 +292,8 @@ fn decode_from_html<R: BufRead, W: Write>(mut r: R, w: &mut W) -> io::Result<()>
     let body_end = raw.find("</body>").unwrap_or(raw.len());
     let slice = &raw[body_start..body_end];
 
-    let trailer: Option<usize> = slice.find("<!-- bytes=0x").and_then(|idx| {
-        let rest = &slice[idx + "<!-- bytes=0x".len()..];
+    let trailer: Option<usize> = slice.find(crate::html::LENGTH_PREFIX).and_then(|idx| {
+        let rest = &slice[idx + crate::html::LENGTH_PREFIX.len()..];
         let e = rest
             .find(|c: char| !c.is_ascii_hexdigit())
             .unwrap_or(rest.len());
@@ -303,7 +303,7 @@ fn decode_from_html<R: BufRead, W: Write>(mut r: R, w: &mut W) -> io::Result<()>
     // Walk span tags, collect digit pairs from the four recognised classes.
     let mut pairs: Vec<u8> = Vec::new();
     let mut cursor = 0;
-    let open_prefix = "<span class=\"";
+    let open_prefix = crate::html::SPAN_OPEN;
     while let Some(rel) = slice[cursor..].find(open_prefix) {
         let abs = cursor + rel + open_prefix.len();
         let tail = &slice[abs..];
@@ -316,12 +316,12 @@ fn decode_from_html<R: BufRead, W: Write>(mut r: R, w: &mut W) -> io::Result<()>
             break;
         }
         let after = &slice[after_open..];
-        let Some(close) = after.find("</span>") else {
+        let Some(close) = after.find(crate::html::SPAN_CLOSE) else {
             break;
         };
         let content = &after[..close];
 
-        if matches!(class, "d-zero" | "d-low" | "d-mid" | "d-high") && content.len() == 2 {
+        if crate::html::DIGIT_CLASSES.contains(&class) && content.len() == 2 {
             let bytes = content.as_bytes();
             if bytes[0].is_ascii_digit() && bytes[1].is_ascii_digit() {
                 let hi = bytes[0] - b'0';
@@ -329,7 +329,7 @@ fn decode_from_html<R: BufRead, W: Write>(mut r: R, w: &mut W) -> io::Result<()>
                 pairs.push(hi * 10 + lo);
             }
         }
-        cursor = after_open + close + "</span>".len();
+        cursor = after_open + close + crate::html::SPAN_CLOSE.len();
     }
 
     // Every 11 pairs = one 8-byte chunk. Incomplete trailing rows drop.

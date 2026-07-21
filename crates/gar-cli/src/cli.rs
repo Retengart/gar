@@ -211,6 +211,8 @@ pub(crate) enum Command {
     /// histogram, and detected ASCII regions — the kind of summary a
     /// reverse engineer would build by hand.
     Analyze(AnalyzeArgs),
+    /// Compare two files in a side-by-side base-60 view.
+    Diff(DiffArgs),
     /// Inverse of the default viewer: parse a base-60 dump back into
     /// raw bytes on stdout.
     ///
@@ -222,6 +224,25 @@ pub(crate) enum Command {
     /// Pipe the output into the shell's completion directory, e.g.
     /// `gar completions zsh > ~/.zfunc/_gar`.
     Completions(CompletionsArgs),
+}
+
+/// Arguments for `gar diff`.
+#[derive(Args, Debug)]
+pub(crate) struct DiffArgs {
+    /// Original file shown on the left.
+    pub(crate) old: PathBuf,
+
+    /// New file shown on the right.
+    pub(crate) new: PathBuf,
+
+    /// When to emphasize changed bytes (`auto`, `always`, `never`).
+    #[arg(
+        long,
+        value_enum,
+        default_value_t = ColorChoice::Auto,
+        value_name = "WHEN",
+    )]
+    pub(crate) color: ColorChoice,
 }
 
 /// Arguments accepted by the default (viewer) behaviour. Flattened into
@@ -306,6 +327,10 @@ pub(crate) struct AnalyzeArgs {
     /// Values below the analyser's internal minimum (`64`) are clamped.
     #[arg(long, default_value_t = crate::analyze::DEFAULT_WINDOW, value_name = "N")]
     pub(crate) window: usize,
+
+    /// Find a byte pattern using the TUI search grammar (`hex:`, `str:`, or auto).
+    #[arg(long, value_name = "PATTERN")]
+    pub(crate) pattern: Option<String>,
 }
 
 /// Arguments for `gar decode`.

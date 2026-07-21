@@ -20,12 +20,12 @@ name = "gar"
 path = "src/main.rs"
 
 [dependencies]
-anyhow = "1.0.102"
+anyhow = "1.0.103"
 clap = { version = "4.6.1", features = ["derive"] }
 clap_complete = "4.6.1"
 crossterm = "0.29.0"
 memchr = "2.8"
-memmap2 = "0.9.10"
+memmap2 = "0.9.11"
 ratatui = "0.30.0"
 gar-core = { version = "0.1.0", path = "../gar-core" }
 
@@ -51,8 +51,3 @@ harness = false
 
 [lints]
 workspace = true
-
-[profile.release]
-lto = "thin"
-codegen-units = 1
-strip = "debuginfo"

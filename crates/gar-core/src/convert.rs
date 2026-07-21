@@ -85,9 +85,28 @@ pub fn u64_to_base60(mut n: u64) -> [u8; DIGITS] {
     out
 }
 
+/// Format `n` as eleven zero-padded base-60 digits separated by colons.
+///
+/// The returned representation is always 32 ASCII bytes long, from
+/// `00:00:00:00:00:00:00:00:00:00:00` through the representation of
+/// [`u64::MAX`].
+#[must_use]
+pub fn format_chunk(n: u64) -> String {
+    let digits = u64_to_base60(n);
+    let mut formatted = String::with_capacity(DIGITS * 3 - 1);
+    for (index, digit) in digits.into_iter().enumerate() {
+        if index > 0 {
+            formatted.push(':');
+        }
+        formatted.push_str(DIGIT_PAIRS_STR[usize::from(digit)]);
+    }
+    formatted
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     fn fmt(n: u64) -> String {
         let digits = u64_to_base60(n);
@@ -111,6 +130,23 @@ mod tests {
     #[test]
     fn zero() {
         assert_eq!(fmt(0), "00:00:00:00:00:00:00:00:00:00:00");
+    }
+
+    #[test]
+    fn format_chunk_zero_is_canonical() {
+        assert_eq!(format_chunk(0), "00:00:00:00:00:00:00:00:00:00:00");
+    }
+
+    #[test]
+    fn format_chunk_classic_example_is_canonical() {
+        assert_eq!(format_chunk(5025), "00:00:00:00:00:00:00:00:01:23:45");
+    }
+
+    #[test]
+    fn format_chunk_max_has_eleven_padded_digits() {
+        let formatted = format_chunk(u64::MAX);
+        assert_eq!(formatted.len(), DIGITS * 3 - 1);
+        assert_eq!(formatted.split(':').count(), DIGITS);
     }
 
     #[test]
@@ -162,6 +198,24 @@ mod tests {
             for &d in &u64_to_base60(n) {
                 assert!(d < 60);
             }
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn arbitrary_u64_roundtrips_through_base60(value in any::<u64>()) {
+            let digits = u64_to_base60(value);
+            prop_assert!(digits.iter().all(|digit| *digit < 60));
+            prop_assert_eq!(recompose(&digits), u128::from(value));
+        }
+
+        #[test]
+        fn formatted_chunk_matches_conversion(value in any::<u64>()) {
+            let parsed = format_chunk(value)
+                .split(':')
+                .map(str::parse::<u8>)
+                .collect::<Result<Vec<_>, _>>()?;
+            prop_assert_eq!(parsed, u64_to_base60(value));
         }
     }
 }

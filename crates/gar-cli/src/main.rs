@@ -11,6 +11,12 @@
 
 //! Entry point for the `gar` binary viewer.
 
-fn main() -> anyhow::Result<()> {
-    gar::run()
+fn main() -> std::process::ExitCode {
+    match gar::run() {
+        Ok(code) => code,
+        Err(error) => {
+            eprintln!("gar: {error:#}");
+            std::process::ExitCode::from(2)
+        }
+    }
 }

@@ -35,6 +35,7 @@ pub struct Palette {
     pub(crate) printable: &'static str,
     pub(crate) dot: &'static str,
     pub(crate) lens: &'static str,
+    pub(crate) changed: &'static str,
     pub(crate) reset: &'static str,
     zero: &'static str,
     low: &'static str,
@@ -61,6 +62,7 @@ pub static PALETTE_NONE: Palette = Palette {
     printable: "",
     dot: "",
     lens: "",
+    changed: "",
     reset: "",
     zero: "",
     low: "",
@@ -79,6 +81,7 @@ pub(crate) static PALETTE_ANSI: Palette = Palette {
     // Magenta distinguishes the lens overlay from the cyan ASCII column,
     // so a user can tell at a glance which bytes are raw vs. interpreted.
     lens: "\x1b[35m",
+    changed: "\x1b[1;7m",
     reset: "\x1b[0m",
     zero: "\x1b[90m",
     low: "\x1b[32m",

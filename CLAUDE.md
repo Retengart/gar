@@ -2,8 +2,9 @@
 
 `gar` is a hex-dump alternative that renders every 8 bytes of input as eleven
 sexagesimal (base-60) digit pairs. Ships a coloured TTY dump, four optional
-lenses (including actual cuneiform), entropy-based statistical analysis,
-roundtrip decoding, and a ratatui-based interactive TUI.
+lenses (including actual cuneiform), entropy-based statistical analysis and
+pattern search, side-by-side file comparison, roundtrip decoding, and a
+ratatui-based interactive TUI.
 
 **Core invariant:** `gar FILE | gar decode` round-trips byte-identical.
 
@@ -15,6 +16,8 @@ gar some-binary-file          # coloured base-60 dump
 gar -i some-binary-file       # interactive TUI
 gar --lens=cuneiform FILE     # cuneiform overlay
 gar --format=json FILE        # JSON output
+gar analyze --pattern str:ELF FILE
+gar diff OLD NEW              # exit 0 equal, 1 different
 gar FILE | gar decode         # roundtrip back to bytes
 ```
 
@@ -22,8 +25,8 @@ gar FILE | gar decode         # roundtrip back to bytes
 
 | Crate | Path | Purpose |
 |-------|------|---------|
-| `gar-core` | `crates/gar-core` | Pure library: `u64_to_base60`, lenses, cuneiform glyphs, URL-safe encoding. Zero external deps. |
-| `gar` | `crates/gar-cli` | CLI binary: dump, decode, analyze, TUI, completions. |
+| `gar-core` | `crates/gar-core` | Pure library: `u64_to_base60`, `format_chunk`, lenses, cuneiform glyphs, URL-safe encoding. Zero external deps. |
+| `gar` | `crates/gar-cli` | CLI binary: dump, decode, analyze, diff, TUI, completions. |
 | `xtask` | `crates/xtask` | CI/dev automation (not published). |
 
 ## Constraints
@@ -42,15 +45,15 @@ gar FILE | gar decode         # roundtrip back to bytes
 gar-core (lib)                   gar (bin)
 ┌─────────────────────┐          ┌──────────────────────────┐
 │ convert.rs          │          │ cli.rs      (clap parser)│
-│   u64_to_base60     │◄────────│ reader.rs   (mmap/stdin) │
+│   base60 + formatter│◄────────│ reader.rs   (mmap/stdin) │
 │ cuneiform.rs        │          │ dump.rs     (ANSI/plain) │
 │   glyph table       │          │ format.rs   (JSON/HTML)  │
 │ lens.rs             │          │ decode.rs   (text→bytes) │
 │   Time/Angle/       │          │ analyze.rs  (entropy)    │
-│   Tablet/Cuneiform  │          │ tui.rs      (ratatui)    │
+│   Tablet/Cuneiform  │          │ diff.rs     (comparison) │
 │ url.rs              │          │ search.rs   (byte patt.) │
-│   encode/decode_u64 │          │ color.rs    (heatmap)    │
-└─────────────────────┘          │ persist.rs  (xdev state) │
+│   encode/decode_u64 │          │ tui.rs      (ratatui)    │
+└─────────────────────┘          │ html/color/persist      │
                                  └──────────────────────────┘
 ```
 
@@ -72,7 +75,7 @@ gar-core (lib)                   gar (bin)
 
 | Module | Purpose |
 |--------|---------|
-| `convert` | `u64_to_base60`, `DIGITS`, `ascii_pair`, `ascii_fallback_forced` |
+| `convert` | `u64_to_base60`, canonical `format_chunk`, `DIGITS`, `ascii_pair`, `ascii_fallback_forced` |
 | `cuneiform` | `glyph()` — 60 Sumero-Babylonian Unicode characters via `LazyLock` |
 | `lens` | `Lens` trait, `TimeLens`, `AngleLens`, `TabletLens`, `CuneiformLens`, `TimeScale` |
 | `url` | URL-safe 11-char `u64` encoding; `ALPHABET = 0-9A-Za-x`; `DecodeError` |
@@ -81,13 +84,15 @@ gar-core (lib)                   gar (bin)
 
 | Module | Purpose |
 |--------|---------|
-| `cli` | clap `Parser`, `Command` enum, `ViewArgs`/`AnalyzeArgs`/`DecodeArgs`, `build_lens` |
+| `cli` | clap `Parser`, `Command` enum, view/analyze/diff/decode arguments, `build_lens` |
 | `reader` | `Bytes` enum (mmap/owned), `load()`, `clamp_range()` |
 | `dump` | `write_line`, `styled_line`, `dump_all` — streaming ANSI/plain renderer |
-| `format` | `emit_json`, `emit_html` — structured output |
+| `format` | shared buffered/streaming JSON and HTML writers |
+| `html` | stable HTML grammar shared by encoder and decoder |
 | `decode` | `decode_stream`, `find_digit_run`, `parse_run` — reverse of dump |
-| `analyze` | `Analysis`, `Region`, `RegionKind`, entropy calculation |
-| `tui` | Full-screen ratatui: hjkl motion, lens cycling, `/`-search, bookmarks, semantic jumps |
+| `analyze` | `Analysis`, regions, entropy, bounded absolute pattern-match reporting |
+| `diff` | side-by-side base-60 comparison with diff-compatible exit status |
+| `tui` | ratatui viewer: cached rows, navigation, pan, pinned comparison, search, bookmarks, semantic jumps |
 | `search` | `Pattern` newtype, `FromStr` with `hex:`/`str:`/auto-detect, `find_all` |
 | `persist` | Per-file state at `$XDG_STATE_HOME/gar/<fnv1a>.state` |
 | `color` | `Palette` struct, `PALETTE_NONE`/`PALETTE_ANSI`, ratatui `Style` constructors |
@@ -113,7 +118,7 @@ gar-core (lib)                   gar (bin)
 |----------|--------|
 | `NO_COLOR` | Monochrome output ([no-color.org](https://no-color.org)) |
 | `NO_UNICODE` | Cuneiform ASCII fallback |
-| `TERM=dumb` | Cuneiform ASCII fallback |
+| `TERM=dumb` | Cuneiform ASCII fallback and monochrome automatic color |
 | `XDG_STATE_HOME` | TUI per-file state location |
 | `HOME` | Fallback state path `$HOME/.local/state/gar/…` |
 
@@ -129,10 +134,13 @@ gar-core (lib)                   gar (bin)
 ## Building & testing
 
 ```sh
-cargo test --workspace                    # all tests
-cargo clippy --workspace --all-targets    # lints
-cargo doc --workspace --no-deps           # docs
-cargo build --release                     # optimised binary (thin LTO)
+just verify                               # complete fail-fast local gate
+cargo nextest run --workspace --all-targets --locked
+cargo test --workspace --doc --locked     # doctests (nextest excludes them)
+cargo check --workspace --all-targets --locked --message-format=json
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo doc --workspace --no-deps --locked  # rustdoc warnings are denied by just
+cargo deny check                          # advisories, bans, licenses, sources
 ```
 
 ## Publishing

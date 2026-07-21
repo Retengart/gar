@@ -73,34 +73,30 @@ impl FromStr for Pattern {
             return Ok(Self(a.as_bytes()[..a.len() - 1].to_vec()));
         }
 
-        if looks_like_hex(trimmed) {
-            parse_hex(trimmed).map(Self)
-        } else {
-            Ok(Self(trimmed.as_bytes().to_vec()))
-        }
+        Ok(parse_auto_hex(trimmed).map_or_else(|| Self(trimmed.as_bytes().to_vec()), Self))
     }
 }
 
-fn looks_like_hex(s: &str) -> bool {
-    let digits: String = s.chars().filter(|c| !c.is_whitespace()).collect();
-    !digits.is_empty()
-        && digits.len().is_multiple_of(2)
-        && digits.chars().all(|c| c.is_ascii_hexdigit())
+fn parse_auto_hex(input: &str) -> Option<Vec<u8>> {
+    parse_hex(input).ok()
 }
 
 fn parse_hex(input: &str) -> Result<Vec<u8>, ParseError> {
-    let digits: String = input.chars().filter(|c| !c.is_whitespace()).collect();
-    if digits.is_empty() || !digits.len().is_multiple_of(2) {
-        return Err(ParseError::InvalidHex);
+    let mut out = Vec::with_capacity(input.len() / 2);
+    let mut high = None;
+    for byte in input.bytes().filter(|byte| !byte.is_ascii_whitespace()) {
+        let digit = hex_digit(byte).ok_or(ParseError::InvalidHex)?;
+        if let Some(hi) = high.take() {
+            out.push(hi * 16 + digit);
+        } else {
+            high = Some(digit);
+        }
     }
-    let mut out = Vec::with_capacity(digits.len() / 2);
-    let bytes = digits.as_bytes();
-    for pair in bytes.chunks_exact(2) {
-        let hi = hex_digit(pair[0]).ok_or(ParseError::InvalidHex)?;
-        let lo = hex_digit(pair[1]).ok_or(ParseError::InvalidHex)?;
-        out.push(hi * 16 + lo);
+    if out.is_empty() || high.is_some() {
+        Err(ParseError::InvalidHex)
+    } else {
+        Ok(out)
     }
-    Ok(out)
 }
 
 const fn hex_digit(c: u8) -> Option<u8> {
@@ -169,6 +165,19 @@ mod tests {
     fn spaces_in_hex_are_ignored() {
         let p: Pattern = "de ad be ef".parse().unwrap();
         assert_eq!(p.0, vec![0xde, 0xad, 0xbe, 0xef]);
+    }
+
+    #[test]
+    fn auto_hex_parser_returns_none_without_partial_output() {
+        assert_eq!(parse_auto_hex("de ad nope"), None);
+    }
+
+    #[test]
+    fn auto_hex_parser_decodes_whitespace_in_one_pass() {
+        assert_eq!(
+            parse_auto_hex("de ad be ef"),
+            Some(vec![0xde, 0xad, 0xbe, 0xef])
+        );
     }
 
     #[test]

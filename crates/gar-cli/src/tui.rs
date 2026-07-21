@@ -3,7 +3,7 @@
 use crate::analyze::{self, Analysis, DEFAULT_WINDOW, RegionKind};
 use crate::chunk::CHUNK;
 use crate::cli::{LensMode, TimeScale, build_lens};
-use crate::dump::{border_style, status_style, styled_line, title_style};
+use crate::dump::{ASCII_COLUMN_START, border_style, status_style, styled_line, title_style};
 use crate::persist::{self, PersistedState};
 use crate::search::{self, Pattern};
 use anyhow::Result;
@@ -13,14 +13,14 @@ use gar_core::lens::Lens;
 use ratatui::Terminal;
 use ratatui::backend::Backend;
 use ratatui::layout::{Constraint, Layout};
-use ratatui::style::Style;
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 use std::borrow::Cow;
 use std::io;
 use std::path::{Path, PathBuf};
 
-const TITLE: &str = " 𒁹 gar — hjkl  L:lens  /:find  m/':mark  ]/[ pze:jump  q:quit 𒌋 ";
+const TITLE: &str = "— hjkl  </>:pan  v/V:pin  L:lens  /:find  m/':mark  ]/[ pze:jump  q:quit 𒌋 ";
 
 /// Maximum bytes fed to the background analysis thread. Keeps startup
 /// fast for huge files — semantic jumps cover this prefix; the cursor
@@ -164,6 +164,98 @@ where
 
 /// Scroll state + derived layout sizes shared between `draw` and
 /// `handle_key`.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+struct RowCacheKey {
+    scroll: usize,
+    visible_end: usize,
+    lens_mode: LensMode,
+    base_offset: u64,
+    width: u16,
+    height: u16,
+    horizontal: u16,
+}
+
+#[derive(Default)]
+struct RowCache {
+    key: Option<RowCacheKey>,
+    paragraph: Paragraph<'static>,
+    max_horizontal: u16,
+    #[cfg(test)]
+    rebuilds: usize,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+struct PinnedView {
+    scroll: usize,
+    cursor: usize,
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "row cache key and renderer inputs stay explicit at the draw boundary"
+)]
+fn ensure_row_cache(
+    cache: &mut RowCache,
+    data: &[u8],
+    scroll: usize,
+    rows: usize,
+    area: ratatui::layout::Rect,
+    base_offset: u64,
+    lens_mode: LensMode,
+    lens: Option<&dyn Lens>,
+    horizontal: u16,
+    title_label: &str,
+    title_offset: u64,
+) -> (usize, u16, u16) {
+    let total_lines = data.len().div_ceil(CHUNK);
+    let visible_end = scroll.saturating_add(rows).min(total_lines);
+    let requested_key = RowCacheKey {
+        scroll,
+        visible_end,
+        lens_mode,
+        base_offset,
+        width: area.width,
+        height: area.height,
+        horizontal,
+    };
+    if cache.key != Some(requested_key) {
+        let lines: Vec<Line<'static>> = (scroll..visible_end)
+            .map(|row| {
+                let start = row * CHUNK;
+                let end = (start + CHUNK).min(data.len());
+                let offset = base_offset.saturating_add(start as u64);
+                styled_line(offset, &data[start..end], lens, None)
+            })
+            .collect();
+        let content_width = lines.iter().map(Line::width).max().unwrap_or(0);
+        let inner_width = usize::from(area.width.saturating_sub(2));
+        cache.max_horizontal =
+            u16::try_from(content_width.saturating_sub(inner_width)).unwrap_or(u16::MAX);
+        let horizontal = horizontal.min(cache.max_horizontal);
+        let title = Line::from(Span::styled(
+            format!(" {title_label} 0x{title_offset:08x} {TITLE}"),
+            title_style(),
+        ));
+        cache.paragraph = Paragraph::new(lines).scroll((0, horizontal)).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(border_style())
+                .title(title),
+        );
+        cache.key = Some(RowCacheKey {
+            horizontal,
+            ..requested_key
+        });
+        #[cfg(test)]
+        {
+            cache.rebuilds += 1;
+        }
+    }
+
+    let horizontal = cache.key.map_or(0, |key| key.horizontal);
+    (visible_end, cache.max_horizontal, horizontal)
+}
+
 struct ViewState {
     data_len: usize,
     total_lines: usize,
@@ -175,6 +267,12 @@ struct ViewState {
     /// Used to compute half-page / full-page jumps without re-querying the
     /// terminal on every keypress.
     view_rows: usize,
+    /// Horizontal text offset shared by the active and pinned panes.
+    horizontal: u16,
+    /// Largest valid horizontal offset for the most recently rendered pane.
+    max_horizontal: u16,
+    /// Frozen viewport used for side-by-side region comparison.
+    pinned: Option<PinnedView>,
     /// Currently-active lens variant; cycled by the `L` key.
     lens_mode: LensMode,
     /// Pre-built trait object matching `lens_mode`. Rebuilt when the
@@ -207,6 +305,10 @@ struct ViewState {
     /// Receiver for the background analysis thread. `None` once the
     /// result has been collected.
     analysis_rx: Option<std::sync::mpsc::Receiver<Analysis>>,
+    /// Bounded render cache containing only the current visible row window.
+    row_cache: RowCache,
+    /// Separate bounded cache for the frozen comparison pane.
+    pinned_cache: RowCache,
 }
 
 impl ViewState {
@@ -218,6 +320,9 @@ impl ViewState {
             scroll: 0,
             cursor: if data.is_empty() { None } else { Some(0) },
             view_rows: 1,
+            horizontal: 0,
+            max_horizontal: 0,
+            pinned: None,
             lens_mode: initial_mode,
             lens: build_lens(initial_mode, scale, purist, true),
             scale,
@@ -237,6 +342,8 @@ impl ViewState {
                 });
                 Some(rx)
             },
+            row_cache: RowCache::default(),
+            pinned_cache: RowCache::default(),
         }
     }
 
@@ -263,44 +370,114 @@ impl ViewState {
         let [body_area, status_area] =
             Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(frame.area());
 
-        // Subtract the two border rows.
-        let rows = usize::from(body_area.height).saturating_sub(2).max(1);
+        let split_pinned = self.pinned.is_some() && body_area.height >= 6;
+        let (active_area, pinned_area) = if split_pinned {
+            let [active, pinned] =
+                Layout::vertical([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
+                    .areas(body_area);
+            (active, Some(pinned))
+        } else {
+            (body_area, None)
+        };
+
+        // Subtract the two border rows from the active pane. Page movement
+        // follows the pane the cursor actually controls.
+        let rows = usize::from(active_area.height).saturating_sub(2).max(1);
         self.view_rows = rows;
         self.scroll_into_view();
 
-        let visible_end = self.scroll.saturating_add(rows).min(self.total_lines);
-        let cursor_row = self.cursor.map(|b| b / CHUNK);
-        let cursor_col = self.cursor.map(|b| b % CHUNK);
         let lens_ref: Option<&dyn Lens> = self.lens.as_deref();
-
-        let lines: Vec<Line<'_>> = (self.scroll..visible_end)
-            .map(|row| {
-                let start = row * CHUNK;
-                let end = (start + CHUNK).min(data.len());
-                let offset = base_offset.saturating_add(start as u64);
-                let cursor_here = if cursor_row == Some(row) {
-                    cursor_col
-                } else {
-                    None
-                };
-                styled_line(offset, &data[start..end], lens_ref, cursor_here)
-            })
-            .collect();
-
-        let title = Line::from(Span::styled(TITLE, title_style()));
-        let body = Paragraph::new(lines).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(border_style())
-                .title(title),
+        let (visible_end, max_horizontal, horizontal) = ensure_row_cache(
+            &mut self.row_cache,
+            data,
+            self.scroll,
+            rows,
+            active_area,
+            base_offset,
+            self.lens_mode,
+            lens_ref,
+            self.horizontal,
+            "active",
+            base_offset.saturating_add((self.scroll * CHUNK) as u64),
         );
-        frame.render_widget(body, body_area);
+        self.max_horizontal = max_horizontal;
+        self.horizontal = horizontal;
+        frame.render_widget(&self.row_cache.paragraph, active_area);
+        self.render_cursor_at(frame, active_area, self.scroll, visible_end, self.cursor);
 
-        let status_line = self.status_line(base_offset, visible_end);
+        if let (Some(area), Some(pin)) = (pinned_area, self.pinned) {
+            let pinned_rows = usize::from(area.height).saturating_sub(2).max(1);
+            let (pinned_end, _, _) = ensure_row_cache(
+                &mut self.pinned_cache,
+                data,
+                pin.scroll,
+                pinned_rows,
+                area,
+                base_offset,
+                self.lens_mode,
+                lens_ref,
+                self.horizontal,
+                "pinned",
+                base_offset.saturating_add(pin.cursor as u64),
+            );
+            frame.render_widget(&self.pinned_cache.paragraph, area);
+            self.render_cursor_at(frame, area, pin.scroll, pinned_end, Some(pin.cursor));
+        }
+
+        let status_line = if self.pinned.is_some() && !split_pinned {
+            Line::from(Span::styled(
+                " terminal too short for pinned view ",
+                status_style(),
+            ))
+        } else {
+            self.status_line(base_offset, visible_end)
+        };
         frame.render_widget(
             Paragraph::new(status_line).style(Style::default()),
             status_area,
         );
+    }
+
+    /// Apply cursor emphasis directly to the rendered cell so moving within
+    /// the cached viewport does not rebuild or clone any row spans.
+    fn render_cursor_at(
+        &self,
+        frame: &mut ratatui::Frame<'_>,
+        body_area: ratatui::layout::Rect,
+        scroll: usize,
+        visible_end: usize,
+        cursor: Option<usize>,
+    ) {
+        let Some(cursor) = cursor else {
+            return;
+        };
+        let row = cursor / CHUNK;
+        if row < scroll || row >= visible_end {
+            return;
+        }
+        let Ok(cursor_column) = u16::try_from(cursor % CHUNK) else {
+            return;
+        };
+        let Ok(visible_row) = u16::try_from(row - scroll) else {
+            return;
+        };
+
+        let logical_column = ASCII_COLUMN_START.saturating_add(cursor_column);
+        if logical_column < self.horizontal {
+            return;
+        }
+
+        let x = body_area
+            .x
+            .saturating_add(1)
+            .saturating_add(logical_column - self.horizontal);
+        let y = body_area.y.saturating_add(1).saturating_add(visible_row);
+        if x >= body_area.right().saturating_sub(1) || y >= body_area.bottom().saturating_sub(1) {
+            return;
+        }
+        if let Some(cell) = frame.buffer_mut().cell_mut((x, y)) {
+            cell.set_style(cell.style().add_modifier(Modifier::REVERSED));
+        }
     }
 
     /// If the cursor drifted off-screen (e.g. via `g`/`G` or page jumps),
@@ -364,7 +541,7 @@ impl ViewState {
         }
 
         if self.total_lines == 0 {
-            return Line::from(Span::styled(" empty input ", label));
+            return Line::from(Span::styled(" empty input   size 0   position 0% ", label));
         }
 
         let start_byte = base_offset.saturating_add((self.scroll * CHUNK) as u64);
@@ -394,6 +571,19 @@ impl ViewState {
                 spans.push(Span::styled(cuneiform_offset(abs), Style::default()));
             }
         }
+
+        let position = self.cursor.map_or(0, |cursor| {
+            let numerator = u128::try_from(cursor.saturating_add(1))
+                .unwrap_or(u128::MAX)
+                .saturating_mul(100);
+            let denominator = u128::try_from(self.data_len).unwrap_or(u128::MAX);
+            u8::try_from(numerator / denominator).unwrap_or(100)
+        });
+
+        spans.push(Span::styled("   size ", label));
+        spans.push(Span::styled(self.data_len.to_string(), Style::default()));
+        spans.push(Span::styled("   position ", label));
+        spans.push(Span::styled(format!("{position}%"), Style::default()));
 
         spans.push(Span::styled("   lens ", label));
         spans.push(Span::styled(self.lens_mode.label(), Style::default()));
@@ -448,6 +638,12 @@ impl ViewState {
             KeyCode::Char('G') | KeyCode::End => {
                 self.cursor = self.cursor.map(|_| self.data_len.saturating_sub(1));
             }
+            KeyCode::Char('>') => {
+                self.horizontal = self.horizontal.saturating_add(4).min(self.max_horizontal);
+            }
+            KeyCode::Char('<') => self.horizontal = self.horizontal.saturating_sub(4),
+            KeyCode::Char('v') => self.toggle_pin(),
+            KeyCode::Char('V') => self.set_pin(),
             // Capital L cycles through the five lens modes: None → Time →
             // Angle → Tablet → Cuneiform → None. Lower-case `l` already
             // moves the cursor, hence the `Shift+l` choice.
@@ -662,6 +858,27 @@ impl ViewState {
         self.lens = build_lens(self.lens_mode, self.scale, self.purist, true);
     }
 
+    fn toggle_pin(&mut self) {
+        if self.pinned.is_some() {
+            self.pinned = None;
+            self.pinned_cache = RowCache::default();
+        } else {
+            self.set_pin();
+        }
+    }
+
+    fn set_pin(&mut self) {
+        let Some(cursor) = self.cursor else {
+            self.status_message = Some(Cow::Borrowed("empty input — nothing to pin"));
+            return;
+        };
+        self.pinned = Some(PinnedView {
+            scroll: self.scroll,
+            cursor,
+        });
+        self.pinned_cache = RowCache::default();
+    }
+
     const fn cursor_fwd(&mut self, n: usize) {
         if let Some(c) = self.cursor {
             let last = self.data_len.saturating_sub(1);
@@ -744,10 +961,7 @@ const fn bookmark_idx(c: char) -> Option<usize> {
 /// Returns `'a'` for index 0, `'z'` for index 25.
 #[must_use]
 const fn slot_char(idx: usize) -> char {
-    const SLOTS: [u8; 26] = [
-        b'a', b'b', b'c', b'd', b'e', b'f', b'g', b'h', b'i', b'j', b'k', b'l', b'm', b'n', b'o',
-        b'p', b'q', b'r', b's', b't', b'u', b'v', b'w', b'x', b'y', b'z',
-    ];
+    const SLOTS: [u8; 26] = *b"abcdefghijklmnopqrstuvwxyz";
     SLOTS[idx] as char
 }
 
@@ -783,6 +997,7 @@ fn cuneiform_offset(offset: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ratatui::backend::TestBackend;
 
     fn state(data_len: usize) -> ViewState {
         // Analysis scans the slice we hand it; a buffer of zeros is a
@@ -790,6 +1005,176 @@ mod tests {
         // care about actual byte contents.
         let data = vec![0_u8; data_len];
         ViewState::new(&data, LensMode::None, TimeScale::Gar, false)
+    }
+
+    fn render_test_frame(
+        state: &mut ViewState,
+        data: &[u8],
+        width: u16,
+        height: u16,
+    ) -> ratatui::buffer::Buffer {
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| state.draw(frame, data, 0)).unwrap();
+        terminal.backend().buffer().clone()
+    }
+
+    fn draw_test_frame(state: &mut ViewState, data: &[u8], width: u16, height: u16) {
+        let _ = render_test_frame(state, data, width, height);
+    }
+
+    fn buffer_text(buffer: &ratatui::buffer::Buffer) -> String {
+        let mut text = String::new();
+        for y in buffer.area.y..buffer.area.bottom() {
+            for x in buffer.area.x..buffer.area.right() {
+                text.push_str(buffer[(x, y)].symbol());
+            }
+            text.push('\n');
+        }
+        text
+    }
+
+    #[test]
+    fn unchanged_frames_reuse_cached_rows() {
+        let data = vec![0_u8; 80];
+        let mut state = ViewState::new(&data, LensMode::None, TimeScale::Gar, false);
+        draw_test_frame(&mut state, &data, 80, 24);
+        draw_test_frame(&mut state, &data, 80, 24);
+        assert_eq!(state.row_cache.rebuilds, 1);
+    }
+
+    #[test]
+    fn scrolling_and_lens_changes_invalidate_cached_rows() {
+        let data = vec![0_u8; 8 * 100];
+        let mut state = ViewState::new(&data, LensMode::None, TimeScale::Gar, false);
+        draw_test_frame(&mut state, &data, 80, 12);
+        state.cursor = Some(8 * 50);
+        draw_test_frame(&mut state, &data, 80, 12);
+        state.cycle_lens();
+        draw_test_frame(&mut state, &data, 80, 12);
+        assert_eq!(state.row_cache.rebuilds, 3);
+    }
+
+    #[test]
+    fn cursor_overlay_moves_without_rebuilding_cached_rows() {
+        let data = b"ABCDEFGH";
+        let mut state = ViewState::new(data, LensMode::None, TimeScale::Gar, false);
+        state.cursor = Some(3);
+        let first = render_test_frame(&mut state, data, 80, 6);
+        assert!(
+            first[(ASCII_COLUMN_START + 1 + 3, 1)]
+                .modifier
+                .contains(Modifier::REVERSED)
+        );
+
+        state.cursor_fwd(1);
+        let second = render_test_frame(&mut state, data, 80, 6);
+        assert!(
+            !second[(ASCII_COLUMN_START + 1 + 3, 1)]
+                .modifier
+                .contains(Modifier::REVERSED)
+        );
+        assert!(
+            second[(ASCII_COLUMN_START + 1 + 4, 1)]
+                .modifier
+                .contains(Modifier::REVERSED)
+        );
+        assert_eq!(state.row_cache.rebuilds, 1);
+    }
+
+    #[test]
+    fn horizontal_scroll_moves_four_columns_and_clamps() {
+        let data = vec![0_u8; 80];
+        let mut state = ViewState::new(&data, LensMode::None, TimeScale::Gar, false);
+        draw_test_frame(&mut state, &data, 30, 8);
+        assert!(state.max_horizontal > 4);
+
+        let _ = state.handle_key(KeyCode::Char('>'), KeyModifiers::NONE, &data);
+        assert_eq!(state.horizontal, 4);
+        for _ in 0..100 {
+            let _ = state.handle_key(KeyCode::Char('>'), KeyModifiers::NONE, &data);
+        }
+        assert_eq!(state.horizontal, state.max_horizontal);
+        let _ = state.handle_key(KeyCode::Char('<'), KeyModifiers::NONE, &data);
+        assert_eq!(state.horizontal, state.max_horizontal.saturating_sub(4));
+        for _ in 0..100 {
+            let _ = state.handle_key(KeyCode::Char('<'), KeyModifiers::NONE, &data);
+        }
+        assert_eq!(state.horizontal, 0);
+    }
+
+    #[test]
+    fn horizontal_scroll_keeps_cursor_overlay_aligned() {
+        let data = b"ABCDEFGH";
+        let mut state = ViewState::new(data, LensMode::None, TimeScale::Gar, false);
+        state.cursor = Some(3);
+        draw_test_frame(&mut state, data, 30, 6);
+        for _ in 0..100 {
+            let _ = state.handle_key(KeyCode::Char('>'), KeyModifiers::NONE, data);
+        }
+        let buffer = render_test_frame(&mut state, data, 30, 6);
+        let shifted_x = ASCII_COLUMN_START + 1 + 3 - state.horizontal;
+        assert!(buffer[(shifted_x, 1)].modifier.contains(Modifier::REVERSED));
+    }
+
+    #[test]
+    fn pin_toggle_and_replace_capture_current_view() {
+        let data = vec![0_u8; 8 * 100];
+        let mut state = ViewState::new(&data, LensMode::None, TimeScale::Gar, false);
+        state.cursor = Some(16);
+        state.scroll = 2;
+        let _ = state.handle_key(KeyCode::Char('v'), KeyModifiers::NONE, &data);
+        assert_eq!(state.pinned.as_ref().map(|pin| pin.cursor), Some(16));
+        assert_eq!(state.pinned.as_ref().map(|pin| pin.scroll), Some(2));
+
+        let _ = state.handle_key(KeyCode::Char('v'), KeyModifiers::NONE, &data);
+        assert!(state.pinned.is_none());
+
+        state.cursor = Some(64);
+        state.scroll = 8;
+        let _ = state.handle_key(KeyCode::Char('V'), KeyModifiers::NONE, &data);
+        assert_eq!(state.pinned.as_ref().map(|pin| pin.cursor), Some(64));
+        state.cursor = Some(96);
+        state.scroll = 12;
+        let _ = state.handle_key(KeyCode::Char('V'), KeyModifiers::NONE, &data);
+        assert_eq!(state.pinned.as_ref().map(|pin| pin.cursor), Some(96));
+        assert_eq!(state.pinned.as_ref().map(|pin| pin.scroll), Some(12));
+    }
+
+    #[test]
+    fn split_view_titles_show_distinct_absolute_offsets() {
+        let data = vec![0_u8; 8 * 100];
+        let mut state = ViewState::new(&data, LensMode::None, TimeScale::Gar, false);
+        let _ = state.handle_key(KeyCode::Char('v'), KeyModifiers::NONE, &data);
+        state.cursor = Some(8 * 50);
+
+        let buffer = render_test_frame(&mut state, &data, 80, 20);
+        let rendered = buffer_text(&buffer);
+        let active_offset = state.scroll * CHUNK;
+        assert!(rendered.contains(&format!("active 0x{active_offset:08x}")));
+        assert!(rendered.contains("pinned 0x00000000"));
+    }
+
+    #[test]
+    fn unchanged_split_frames_reuse_both_bounded_caches() {
+        let data = vec![0_u8; 8 * 100];
+        let mut state = ViewState::new(&data, LensMode::None, TimeScale::Gar, false);
+        let _ = state.handle_key(KeyCode::Char('v'), KeyModifiers::NONE, &data);
+        draw_test_frame(&mut state, &data, 80, 20);
+        draw_test_frame(&mut state, &data, 80, 20);
+        assert_eq!(state.row_cache.rebuilds, 1);
+        assert_eq!(state.pinned_cache.rebuilds, 1);
+    }
+
+    #[test]
+    fn short_terminal_falls_back_to_one_pane_with_message() {
+        let data = vec![0_u8; 80];
+        let mut state = ViewState::new(&data, LensMode::None, TimeScale::Gar, false);
+        let _ = state.handle_key(KeyCode::Char('v'), KeyModifiers::NONE, &data);
+
+        let rendered = buffer_text(&render_test_frame(&mut state, &data, 80, 6));
+        assert!(rendered.contains("terminal too short for pinned view"));
+        assert!(!rendered.contains("pinned 0x"));
     }
 
     #[test]
@@ -941,7 +1326,7 @@ mod tests {
             .iter()
             .map(|span| span.content.as_ref())
             .collect();
-        assert_eq!(joined, " empty input ");
+        assert_eq!(joined, " empty input   size 0   position 0% ");
     }
 
     #[test]
@@ -958,6 +1343,8 @@ mod tests {
         assert!(joined.contains(" lines 6-20 / 100"));
         assert!(joined.contains("bytes"));
         assert!(joined.contains("cursor 0x0000012a"));
+        assert!(joined.contains("size 800"));
+        assert!(joined.contains("position 5%"));
         assert!(joined.contains("lens —"));
     }
 

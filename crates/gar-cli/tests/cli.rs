@@ -13,6 +13,173 @@ mod common;
 
 use common::{fixtures, gar_cmd, spawn_with_closed_stdout};
 use predicates::prelude::PredicateBooleanExt;
+use tempfile::NamedTempFile;
+
+fn temp_file(bytes: &[u8]) -> NamedTempFile {
+    let file = NamedTempFile::new().expect("create temporary input");
+    std::fs::write(file.path(), bytes).expect("write temporary input");
+    file
+}
+
+// ---------------------------------------------------------------------
+// Binary diff: stable markers, offsets, colour policy, and exit codes.
+// ---------------------------------------------------------------------
+
+#[test]
+fn diff_identical_files_exits_zero_and_marks_equal_rows() {
+    let old = temp_file(b"same bytes");
+    let new = temp_file(b"same bytes");
+
+    gar_cmd()
+        .arg("diff")
+        .args([old.path(), new.path()])
+        .assert()
+        .code(0)
+        .stdout(predicates::str::contains("00000000 ="));
+}
+
+#[test]
+fn diff_changed_files_exits_one_with_plain_side_by_side_output() {
+    let old = temp_file(b"abcdefgh");
+    let new = temp_file(b"abcdEfgh");
+
+    gar_cmd()
+        .arg("diff")
+        .arg("--color=never")
+        .args([old.path(), new.path()])
+        .assert()
+        .code(1)
+        .stdout(predicates::str::contains("00000000 !"))
+        .stdout(predicates::str::contains("abcdefgh"))
+        .stdout(predicates::str::contains("abcdEfgh"))
+        .stdout(predicates::str::contains("\x1b[").not());
+}
+
+#[test]
+fn diff_unequal_files_distinguishes_left_and_right_only_rows() {
+    let short = temp_file(b"12345678");
+    let long = temp_file(b"12345678abcdefgh");
+
+    gar_cmd()
+        .arg("diff")
+        .args([short.path(), long.path()])
+        .assert()
+        .code(1)
+        .stdout(predicates::str::contains("00000008 >"));
+
+    gar_cmd()
+        .arg("diff")
+        .args([long.path(), short.path()])
+        .assert()
+        .code(1)
+        .stdout(predicates::str::contains("00000008 <"));
+}
+
+#[test]
+fn diff_color_always_emphasizes_changes() {
+    let old = temp_file(b"abcdefgh");
+    let new = temp_file(b"abcdEfgh");
+
+    gar_cmd()
+        .arg("diff")
+        .arg("--color=always")
+        .args([old.path(), new.path()])
+        .assert()
+        .code(1)
+        .stdout(predicates::str::contains("\x1b["));
+}
+
+#[test]
+fn diff_missing_file_exits_two_and_names_the_path() {
+    let old = temp_file(b"left");
+    let missing = old.path().with_extension("missing");
+
+    gar_cmd()
+        .arg("diff")
+        .args([old.path(), missing.as_path()])
+        .assert()
+        .code(2)
+        .stderr(predicates::str::contains(
+            missing.to_string_lossy().as_ref(),
+        ));
+}
+
+#[test]
+fn diff_exits_zero_on_broken_pipe() {
+    let old = temp_file(&fixtures::zero_fill_1kib());
+    let mut changed = fixtures::zero_fill_1kib();
+    changed[0] = 1;
+    let new = temp_file(&changed);
+    let old_path = old.path().to_str().expect("UTF-8 temporary path");
+    let new_path = new.path().to_str().expect("UTF-8 temporary path");
+
+    let status = spawn_with_closed_stdout(&["diff", old_path, new_path], &[]);
+    assert!(
+        status.success(),
+        "gar diff must exit 0 on BrokenPipe, got {status:?}",
+    );
+}
+
+// ---------------------------------------------------------------------
+// Analyze pattern reporting: same grammar as TUI search, absolute range
+// offsets, and bounded output for repetitive inputs.
+// ---------------------------------------------------------------------
+
+#[test]
+fn analyze_pattern_combines_range_and_absolute_match_offsets() {
+    let file = temp_file(b"zzABxxAByy");
+
+    gar_cmd()
+        .arg("analyze")
+        .args(["--skip", "3", "--length", "5", "--pattern", "hex:4142"])
+        .arg(file.path())
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("bytes         5"))
+        .stdout(predicates::str::contains("matches       1"))
+        .stdout(predicates::str::contains("0x00000003..0x00000008"))
+        .stdout(predicates::str::contains("0x00000006"));
+}
+
+#[test]
+fn analyze_pattern_accepts_string_grammar() {
+    let file = temp_file(b"deadbeef deadbeef");
+
+    gar_cmd()
+        .arg("analyze")
+        .args(["--pattern", "str:deadbeef"])
+        .arg(file.path())
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("matches       2"));
+}
+
+#[test]
+fn analyze_pattern_rejects_invalid_explicit_hex() {
+    let file = temp_file(b"anything");
+
+    gar_cmd()
+        .arg("analyze")
+        .args(["--pattern", "hex:abc"])
+        .arg(file.path())
+        .assert()
+        .code(2)
+        .stderr(predicates::str::contains("invalid pattern"));
+}
+
+#[test]
+fn analyze_pattern_limits_offsets_and_reports_omitted_matches() {
+    let file = temp_file(&b"AB".repeat(25));
+
+    gar_cmd()
+        .arg("analyze")
+        .args(["--pattern", "str:AB"])
+        .arg(file.path())
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("matches       25"))
+        .stdout(predicates::str::contains("... 5 more"));
+}
 
 // ---------------------------------------------------------------------
 // Stdin piping

@@ -263,7 +263,12 @@ fn detect_ascii_regions(data: &[u8], regions: &mut Vec<Region>) {
 ///
 /// Format is plain text, newline-terminated, suitable for piping into
 /// `grep`, `awk`, or copy/paste into reports. No ANSI escapes.
-pub(crate) fn write_summary<W: Write>(a: &Analysis, data: &[u8], w: &mut W) -> io::Result<()> {
+pub(crate) fn write_summary<W: Write>(
+    a: &Analysis,
+    data: &[u8],
+    base_offset: u64,
+    w: &mut W,
+) -> io::Result<()> {
     writeln!(w, "bytes         {}", a.total_bytes)?;
     writeln!(w, "entropy       {:.3} bits/byte", a.entropy)?;
     writeln!(w, "window        {}", a.window_size)?;
@@ -315,10 +320,37 @@ pub(crate) fn write_summary<W: Write>(a: &Analysis, data: &[u8], w: &mut W) -> i
         writeln!(w, "ascii preview")?;
         for r in previews {
             let s = std::str::from_utf8(data.get(r.start..r.end).unwrap_or(b"")).unwrap_or("");
-            writeln!(w, "  0x{:08x}..0x{:08x}  {s:?}", r.start, r.end)?;
+            let start = base_offset.saturating_add(u64::try_from(r.start).unwrap_or(u64::MAX));
+            let end = base_offset.saturating_add(u64::try_from(r.end).unwrap_or(u64::MAX));
+            writeln!(w, "  0x{start:08x}..0x{end:08x}  {s:?}")?;
         }
     }
 
+    Ok(())
+}
+
+/// Append a bounded list of absolute pattern-match offsets to a summary.
+pub(crate) fn write_matches<W: Write>(
+    matches: &[usize],
+    base_offset: u64,
+    w: &mut W,
+) -> io::Result<()> {
+    const DISPLAY_LIMIT: usize = 20;
+
+    writeln!(w, "matches       {}", matches.len())?;
+    if matches.is_empty() {
+        return Ok(());
+    }
+
+    writeln!(w, "match offsets")?;
+    for &offset in matches.iter().take(DISPLAY_LIMIT) {
+        let offset = base_offset.saturating_add(u64::try_from(offset).unwrap_or(u64::MAX));
+        writeln!(w, "  0x{offset:08x}")?;
+    }
+    let omitted = matches.len().saturating_sub(DISPLAY_LIMIT);
+    if omitted > 0 {
+        writeln!(w, "  ... {omitted} more")?;
+    }
     Ok(())
 }
 
@@ -442,11 +474,24 @@ mod tests {
         let data = b"The quick brown fox jumps over the lazy dog. ".repeat(10);
         let a = analyze(&data, 64);
         let mut buf = Vec::new();
-        write_summary(&a, &data, &mut buf).unwrap();
+        write_summary(&a, &data, 0, &mut buf).unwrap();
         let s = std::str::from_utf8(&buf).unwrap();
         assert!(s.contains("bytes"));
         assert!(s.contains("entropy"));
         assert!(s.contains("top bytes"));
         assert!(s.contains("ascii preview"));
+    }
+
+    #[test]
+    fn match_offsets_are_absolute_and_bounded() {
+        let matches: Vec<usize> = (0..25).map(|index| index * 2).collect();
+        let mut output = Vec::new();
+        write_matches(&matches, 3, &mut output).expect("write matches");
+        let rendered = String::from_utf8(output).expect("ASCII output");
+        assert!(rendered.contains("matches       25"));
+        assert!(rendered.contains("0x00000003"));
+        assert!(rendered.contains("0x00000029"));
+        assert!(!rendered.contains("0x0000002b"));
+        assert!(rendered.contains("... 5 more"));
     }
 }
