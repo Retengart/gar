@@ -15,6 +15,7 @@
 //! Sumerian heat-map palette via inline CSS classes.
 
 use crate::chunk::{CHUNK, clamp_filled, is_printable, prepare, read_chunk, skip_bytes};
+use crate::html::{LENGTH_PREFIX, LENGTH_SUFFIX, SEPARATOR, SPAN_CLOSE, SPAN_OPEN, digit_class};
 use gar_core::lens::Lens;
 use std::io::{self, BufReader, BufWriter, Read, Write};
 
@@ -38,40 +39,7 @@ pub(crate) fn emit_json<W: Write>(
     let mut out = BufWriter::new(w);
     for (idx, chunk) in data.chunks(CHUNK).enumerate() {
         let offset = base_offset.saturating_add((idx * CHUNK) as u64);
-        let (chunk_be, digits) = prepare(chunk);
-
-        out.write_all(b"{\"offset\":")?;
-        write!(out, "{offset}")?;
-
-        out.write_all(b",\"bytes\":[")?;
-        for (i, &b) in chunk.iter().enumerate() {
-            if i > 0 {
-                out.write_all(b",")?;
-            }
-            write!(out, "{b}")?;
-        }
-        out.write_all(b"]")?;
-
-        out.write_all(b",\"digits\":[")?;
-        for (i, &d) in digits.iter().enumerate() {
-            if i > 0 {
-                out.write_all(b",")?;
-            }
-            write!(out, "{d}")?;
-        }
-        out.write_all(b"]")?;
-
-        out.write_all(b",\"ascii\":\"")?;
-        write_json_string(&mut out, &ascii_rendering(chunk))?;
-        out.write_all(b"\"")?;
-
-        if let Some(lens) = lens {
-            out.write_all(b",\"lens\":\"")?;
-            write_json_string(&mut out, &lens.render(chunk_be))?;
-            out.write_all(b"\"")?;
-        }
-
-        out.write_all(b"}\n")?;
+        write_json_chunk(&mut out, offset, chunk, lens)?;
     }
     // REF-04 (D-01, D-04). Decimal in JSON per convention; emitter stays
     // hand-rolled so the shape matches this file's existing precedent
@@ -93,41 +61,12 @@ pub(crate) fn emit_html<W: Write>(
 
     for (idx, chunk) in data.chunks(CHUNK).enumerate() {
         let offset = base_offset.saturating_add((idx * CHUNK) as u64);
-        let (chunk_be, digits) = prepare(chunk);
-
-        write!(out, "<span class=\"offset\">{offset:08x}</span>  ")?;
-
-        for (i, &d) in digits.iter().enumerate() {
-            if i > 0 {
-                out.write_all(b"<span class=\"sep\">:</span>")?;
-            }
-            write!(out, "<span class=\"{}\">{d:02}</span>", digit_class(d))?;
-        }
-
-        out.write_all(b"  <span class=\"delim\">|</span>")?;
-        for &b in chunk {
-            if is_printable(b) {
-                out.write_all(b"<span class=\"print\">")?;
-                write_html_char(&mut out, b as char)?;
-                out.write_all(b"</span>")?;
-            } else {
-                out.write_all(b"<span class=\"dot\">.</span>")?;
-            }
-        }
-        out.write_all(b"<span class=\"delim\">|</span>")?;
-
-        if let Some(lens) = lens {
-            out.write_all(b"  <span class=\"lens\">")?;
-            write_html_string(&mut out, &lens.render(chunk_be))?;
-            out.write_all(b"</span>")?;
-        }
-
-        out.write_all(b"\n")?;
+        write_html_chunk(&mut out, offset, chunk, lens)?;
     }
 
     // REF-04 (D-01, D-04). HTML uses hex (matches ansi/plain). Sits
     // between `</pre>` and `</body></html>` — still valid HTML5 placement.
-    writeln!(out, "<!-- bytes=0x{:x} -->", data.len())?;
+    writeln!(out, "{LENGTH_PREFIX}{:x}{LENGTH_SUFFIX}", data.len())?;
     out.write_all(HTML_EPILOGUE.as_bytes())?;
     out.flush()
 }
@@ -173,40 +112,7 @@ pub(crate) fn emit_json_stream<R: Read, W: Write>(
         total += actual as u64;
 
         let chunk = &chunk_buf[..actual];
-        let (chunk_be, digits) = prepare(chunk);
-
-        out.write_all(b"{\"offset\":")?;
-        write!(out, "{offset}")?;
-
-        out.write_all(b",\"bytes\":[")?;
-        for (i, &b) in chunk.iter().enumerate() {
-            if i > 0 {
-                out.write_all(b",")?;
-            }
-            write!(out, "{b}")?;
-        }
-        out.write_all(b"]")?;
-
-        out.write_all(b",\"digits\":[")?;
-        for (i, &d) in digits.iter().enumerate() {
-            if i > 0 {
-                out.write_all(b",")?;
-            }
-            write!(out, "{d}")?;
-        }
-        out.write_all(b"]")?;
-
-        out.write_all(b",\"ascii\":\"")?;
-        write_json_string(&mut out, &ascii_rendering(chunk))?;
-        out.write_all(b"\"")?;
-
-        if let Some(lens) = lens {
-            out.write_all(b",\"lens\":\"")?;
-            write_json_string(&mut out, &lens.render(chunk_be))?;
-            out.write_all(b"\"")?;
-        }
-
-        out.write_all(b"}\n")?;
+        write_json_chunk(&mut out, offset, chunk, lens)?;
         offset = offset.saturating_add(CHUNK as u64);
     }
 
@@ -254,40 +160,11 @@ pub(crate) fn emit_html_stream<R: Read, W: Write>(
         total += actual as u64;
 
         let chunk = &chunk_buf[..actual];
-        let (chunk_be, digits) = prepare(chunk);
-
-        write!(out, "<span class=\"offset\">{offset:08x}</span>  ")?;
-
-        for (i, &d) in digits.iter().enumerate() {
-            if i > 0 {
-                out.write_all(b"<span class=\"sep\">:</span>")?;
-            }
-            write!(out, "<span class=\"{}\">{d:02}</span>", digit_class(d))?;
-        }
-
-        out.write_all(b"  <span class=\"delim\">|</span>")?;
-        for &b in chunk {
-            if is_printable(b) {
-                out.write_all(b"<span class=\"print\">")?;
-                write_html_char(&mut out, b as char)?;
-                out.write_all(b"</span>")?;
-            } else {
-                out.write_all(b"<span class=\"dot\">.</span>")?;
-            }
-        }
-        out.write_all(b"<span class=\"delim\">|</span>")?;
-
-        if let Some(lens) = lens {
-            out.write_all(b"  <span class=\"lens\">")?;
-            write_html_string(&mut out, &lens.render(chunk_be))?;
-            out.write_all(b"</span>")?;
-        }
-
-        out.write_all(b"\n")?;
+        write_html_chunk(&mut out, offset, chunk, lens)?;
         offset = offset.saturating_add(CHUNK as u64);
     }
 
-    writeln!(out, "<!-- bytes=0x{total:x} -->")?;
+    writeln!(out, "{LENGTH_PREFIX}{total:x}{LENGTH_SUFFIX}")?;
     out.write_all(HTML_EPILOGUE.as_bytes())?;
     out.flush()
 }
@@ -312,13 +189,78 @@ const HTML_PROLOGUE: &str = "<!doctype html>
 
 const HTML_EPILOGUE: &str = "</pre></body></html>\n";
 
-const fn digit_class(d: u8) -> &'static str {
-    match d {
-        0 => "d-zero",
-        1..20 => "d-low",
-        20..40 => "d-mid",
-        _ => "d-high",
+fn write_json_chunk<W: Write>(
+    out: &mut W,
+    offset: u64,
+    chunk: &[u8],
+    lens: Option<&dyn Lens>,
+) -> io::Result<()> {
+    let (chunk_be, digits) = prepare(chunk);
+
+    write!(out, "{{\"offset\":{offset},\"bytes\":[")?;
+    for (i, &byte) in chunk.iter().enumerate() {
+        if i > 0 {
+            out.write_all(b",")?;
+        }
+        write!(out, "{byte}")?;
     }
+    out.write_all(b"],\"digits\":[")?;
+    for (i, &digit) in digits.iter().enumerate() {
+        if i > 0 {
+            out.write_all(b",")?;
+        }
+        write!(out, "{digit}")?;
+    }
+    out.write_all(b"],\"ascii\":\"")?;
+    write_json_string(out, &ascii_rendering(chunk))?;
+    out.write_all(b"\"")?;
+
+    if let Some(lens) = lens {
+        out.write_all(b",\"lens\":\"")?;
+        write_json_string(out, &lens.render(chunk_be))?;
+        out.write_all(b"\"")?;
+    }
+    out.write_all(b"}\n")
+}
+
+fn write_html_chunk<W: Write>(
+    out: &mut W,
+    offset: u64,
+    chunk: &[u8],
+    lens: Option<&dyn Lens>,
+) -> io::Result<()> {
+    let (chunk_be, digits) = prepare(chunk);
+
+    write!(out, "{SPAN_OPEN}offset\">{offset:08x}{SPAN_CLOSE}  ")?;
+    for (i, &digit) in digits.iter().enumerate() {
+        if i > 0 {
+            out.write_all(SEPARATOR.as_bytes())?;
+        }
+        write!(
+            out,
+            "{SPAN_OPEN}{}\">{digit:02}{SPAN_CLOSE}",
+            digit_class(digit)
+        )?;
+    }
+
+    write!(out, "  {SPAN_OPEN}delim\">|{SPAN_CLOSE}")?;
+    for &byte in chunk {
+        if is_printable(byte) {
+            write!(out, "{SPAN_OPEN}print\">")?;
+            write_html_char(out, byte as char)?;
+            out.write_all(SPAN_CLOSE.as_bytes())?;
+        } else {
+            write!(out, "{SPAN_OPEN}dot\">.{SPAN_CLOSE}")?;
+        }
+    }
+    write!(out, "{SPAN_OPEN}delim\">|{SPAN_CLOSE}")?;
+
+    if let Some(lens) = lens {
+        write!(out, "  {SPAN_OPEN}lens\">")?;
+        write_html_string(out, &lens.render(chunk_be))?;
+        out.write_all(SPAN_CLOSE.as_bytes())?;
+    }
+    out.write_all(b"\n")
 }
 
 /// Dot-rendering of non-printable bytes, matching the terminal column.
@@ -626,5 +568,21 @@ mod tests {
         emit_html(&data, 0, &mut buf2, Some(&lens)).unwrap();
         let buffered = String::from_utf8(buf2).unwrap();
         assert_eq!(streamed, buffered);
+    }
+
+    #[test]
+    fn json_chunk_writer_emits_one_schema_row() {
+        let mut out = Vec::new();
+        write_json_chunk(&mut out, 8, &[0, 0, 0, 0, 0, 0, 0x13, 0xa1], None).unwrap();
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "{\"offset\":8,\"bytes\":[0,0,0,0,0,0,19,161],\"digits\":[0,0,0,0,0,0,0,0,1,23,45],\"ascii\":\"........\"}\n"
+        );
+    }
+
+    #[test]
+    fn html_protocol_digit_class_is_shared() {
+        assert_eq!(digit_class(0), "d-zero");
+        assert_eq!(digit_class(59), "d-high");
     }
 }

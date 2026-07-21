@@ -14,6 +14,7 @@ mod color;
 mod decode;
 mod dump;
 mod format;
+mod html;
 mod persist;
 mod reader;
 mod search;
