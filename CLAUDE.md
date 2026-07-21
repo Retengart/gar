@@ -31,11 +31,11 @@ gar FILE | gar decode         # roundtrip back to bytes
 
 ## Constraints
 
-- **Rust edition 2024**, MSRV `1.95`. Single statically-linked binary via `cargo install`.
+- **Rust edition 2024**, MSRV `1.97.1`. Single statically-linked binary via `cargo install`.
 - **`gar-core` has zero external dependencies** — its selling point.
 - **JSON schema and `decode` accept-format are stable.** Any change must be additive.
 - **Output determinism:** `NO_COLOR`, `NO_UNICODE`, `TERM=dumb` are contractual.
-- **CI matrix:** Ubuntu/macOS/Windows × rustc 1.95/stable/beta.
+- **CI matrix:** Ubuntu/macOS/Windows × rustc 1.97.1/stable/beta.
 - **Lint bar:** `clippy::pedantic + nursery + cargo` with `-D warnings`.
   Only `multiple_crate_versions` and `module_name_repetitions` are allowed.
 

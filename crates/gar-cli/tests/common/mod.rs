@@ -301,12 +301,13 @@ pub fn spawn_with_closed_stdout(args: &[&str], stdin_bytes: &[u8]) -> std::proce
         .stderr(Stdio::piped())
         .spawn()
         .expect("spawn gar");
+    // Close stdout before feeding stdin. Commands that consume stdin cannot
+    // write until the read end is already gone, which removes a scheduler race.
+    drop(child.stdout.take());
     if let Some(mut stdin) = child.stdin.take() {
         stdin.write_all(stdin_bytes).ok();
         // Drop `stdin` to close the write end so the child reaches EOF.
     }
-    // Close stdout immediately so the child's next write gets EPIPE.
-    drop(child.stdout.take());
     child.wait().expect("wait gar")
 }
 

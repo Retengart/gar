@@ -3,6 +3,7 @@ name = "gar-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2024"
+license = "MIT OR Apache-2.0"
 
 [package.metadata]
 cargo-fuzz = true
@@ -13,7 +14,7 @@ resolver = "3"
 members = ["."]
 
 [dependencies]
-libfuzzer-sys = { version = "0.4", default-features = false, features = ["link_libfuzzer"] }
+libfuzzer-sys = { version = "0.4.13", default-features = false, features = ["link_libfuzzer"] }
 gar-core = { path = "../crates/gar-core" }
 gar = { path = "../crates/gar-cli", package = "gar" }
 
