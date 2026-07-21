@@ -183,3 +183,8 @@ table.
 ## License
 
 MIT OR Apache-2.0
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the project contracts and local
+workflow. Run `just verify` before submitting a change.
