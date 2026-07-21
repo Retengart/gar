@@ -537,7 +537,7 @@ dependencies = [
 
 [[package]]
 name = "gar"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "clap",
@@ -551,7 +551,7 @@ dependencies = [
 
 [[package]]
 name = "gar-core"
-version = "0.1.3"
+version = "0.1.4"
 
 [[package]]
 name = "gar-fuzz"
