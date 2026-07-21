@@ -21,6 +21,11 @@ fn temp_file(bytes: &[u8]) -> NamedTempFile {
     file
 }
 
+// One MiB expands to more than 10 MiB of formatted output. That exceeds
+// anonymous-pipe buffers on every CI platform, so closing the read end forces
+// BrokenPipe even when the child is scheduled before the parent resumes.
+const BROKEN_PIPE_INPUT_BYTES: usize = 1024 * 1024;
+
 // ---------------------------------------------------------------------
 // Binary diff: stable markers, offsets, colour policy, and exit codes.
 // ---------------------------------------------------------------------
@@ -106,8 +111,8 @@ fn diff_missing_file_exits_two_and_names_the_path() {
 
 #[test]
 fn diff_exits_zero_on_broken_pipe() {
-    let old = temp_file(&fixtures::zero_fill_1kib());
-    let mut changed = fixtures::zero_fill_1kib();
+    let mut changed = vec![0_u8; BROKEN_PIPE_INPUT_BYTES];
+    let old = temp_file(&changed);
     changed[0] = 1;
     let new = temp_file(&changed);
     let old_path = old.path().to_str().expect("UTF-8 temporary path");
@@ -207,10 +212,8 @@ fn stdin_piped_dump_produces_output() {
 
 #[test]
 fn dump_exits_zero_on_broken_pipe() {
-    // 1 KiB of zero fill → ~128 dump lines, enough to saturate any
-    // reasonable pipe buffer before the child finishes writing. The
-    // child's BrokenPipe handler in `lib.rs::run_view` must absorb
-    // the error and yield exit status 0.
+    // The helper closes stdout before feeding stdin, so the child cannot write
+    // any output until the read end is already gone.
     let status = spawn_with_closed_stdout(
         &["--color=never", "--format=plain"],
         &fixtures::zero_fill_1kib(),
