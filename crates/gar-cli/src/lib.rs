@@ -12,6 +12,7 @@ mod chunk;
 mod cli;
 mod color;
 mod decode;
+mod diff;
 mod dump;
 mod format;
 mod html;
@@ -23,11 +24,12 @@ mod tui;
 use anyhow::Result;
 use clap::CommandFactory;
 use clap::Parser;
-use cli::{AnalyzeArgs, ColorChoice, Command, CompletionsArgs, DecodeArgs, ViewArgs};
+use cli::{AnalyzeArgs, ColorChoice, Command, CompletionsArgs, DecodeArgs, DiffArgs, ViewArgs};
 use color::Palette;
 use gar_core::Lens;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, IsTerminal, stdin, stdout};
+use std::process::ExitCode;
 
 pub use cli::{Format, LensMode};
 
@@ -86,17 +88,19 @@ pub mod __bench {
 ///
 /// Propagates I/O errors from the selected subcommand handler; callers
 /// typically surface them via `?` in `fn main()`.
-pub fn run() -> Result<()> {
+pub fn run() -> Result<ExitCode> {
     let args = cli::Cli::parse();
     match &args.command {
         None => run_view(&args.view),
         Some(Command::Analyze(a)) => run_analyze(a),
+        Some(Command::Diff(d)) => return run_diff(d),
         Some(Command::Decode(d)) => run_decode(d),
         Some(Command::Completions(c)) => {
             run_completions(c);
             Ok(())
         }
-    }
+    }?;
+    Ok(ExitCode::SUCCESS)
 }
 
 fn run_view(view: &ViewArgs) -> Result<()> {
@@ -213,6 +217,25 @@ fn run_analyze(args: &AnalyzeArgs) -> Result<()> {
     }
 }
 
+fn run_diff(args: &DiffArgs) -> Result<ExitCode> {
+    let old = reader::load(Some(&args.old), 0, None)?;
+    let new = reader::load(Some(&args.new), 0, None)?;
+    let stdout = stdout();
+    let palette = pick_palette(args.color, stdout.is_terminal());
+    match diff::write_diff(
+        old.as_slice(),
+        new.as_slice(),
+        0,
+        BufWriter::new(stdout.lock()),
+        palette,
+    ) {
+        Ok(true) => Ok(ExitCode::from(1)),
+        Ok(false) => Ok(ExitCode::SUCCESS),
+        Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(ExitCode::SUCCESS),
+        Err(e) => Err(e.into()),
+    }
+}
+
 fn run_decode(args: &DecodeArgs) -> Result<()> {
     // Decode reads text line-by-line; it doesn't benefit from mmap
     // (dump files are tiny compared to their source), so we lean on
@@ -254,7 +277,9 @@ fn pick_palette(choice: ColorChoice, stdout_is_tty: bool) -> &'static Palette {
         ColorChoice::Always => true,
         ColorChoice::Never => false,
         ColorChoice::Auto => {
-            stdout_is_tty && std::env::var_os("NO_COLOR").is_none_or(|v| v.is_empty())
+            stdout_is_tty
+                && std::env::var_os("NO_COLOR").is_none_or(|v| v.is_empty())
+                && std::env::var_os("TERM").is_none_or(|v| v != "dumb")
         }
     };
     if want_color {
@@ -286,6 +311,8 @@ mod tests {
         // limited to this small set of env-sensitive tests; they only read
         // their own variable and clean up after themselves.
         unsafe { std::env::remove_var("NO_COLOR") };
+        // SAFETY: see above.
+        unsafe { std::env::remove_var("TERM") };
         assert!(is_ansi(pick_palette(ColorChoice::Auto, true)));
     }
 
@@ -294,6 +321,8 @@ mod tests {
     fn auto_with_no_tty_is_mono() {
         // SAFETY: see `auto_with_tty_and_no_env_is_ansi`.
         unsafe { std::env::remove_var("NO_COLOR") };
+        // SAFETY: see `auto_with_tty_and_no_env_is_ansi`.
+        unsafe { std::env::remove_var("TERM") };
         assert!(!is_ansi(pick_palette(ColorChoice::Auto, false)));
     }
 
@@ -305,6 +334,19 @@ mod tests {
         assert!(!is_ansi(pick_palette(ColorChoice::Auto, true)));
         // SAFETY: see `auto_with_tty_and_no_env_is_ansi`.
         unsafe { std::env::remove_var("NO_COLOR") };
+    }
+
+    #[test]
+    #[serial(env)]
+    fn auto_with_dumb_terminal_is_mono() {
+        // SAFETY: see `auto_with_tty_and_no_env_is_ansi`.
+        unsafe {
+            std::env::remove_var("NO_COLOR");
+            std::env::set_var("TERM", "dumb");
+        }
+        assert!(!is_ansi(pick_palette(ColorChoice::Auto, true)));
+        // SAFETY: see `auto_with_tty_and_no_env_is_ansi`.
+        unsafe { std::env::remove_var("TERM") };
     }
 
     #[test]
