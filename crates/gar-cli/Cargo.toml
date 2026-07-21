@@ -27,11 +27,11 @@ crossterm = "0.29.0"
 memchr = "2.8.3"
 memmap2 = "0.9.11"
 ratatui = "0.30.2"
-gar-core = { version = "0.1.0", path = "../gar-core" }
+gar-core = { version = "0.1.4", path = "../gar-core" }
 
 [dev-dependencies]
 assert_cmd = "2.2.2"
-gar-core = { version = "0.1.0", path = "../gar-core" }
+gar-core = { version = "0.1.4", path = "../gar-core" }
 criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support", "html_reports"] }
 predicates = "3.1.4"
 serial_test = { version = "3.5.0", default-features = false }

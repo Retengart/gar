@@ -55,6 +55,41 @@ fn workflow_actions_use_immutable_revisions() {
 }
 
 #[test]
+fn release_context_values_are_not_interpolated_into_shell_source() {
+    let workflow = read(".github/workflows/release.yml");
+
+    assert!(
+        !workflow.contains("gh release create \"${{ github.ref_name }}\""),
+        "tag names must enter the release command through an environment variable so shell syntax in a tag cannot alter the script"
+    );
+    assert!(
+        workflow.contains("RELEASE_TAG: ${{ github.ref_name }}"),
+        "the release tag must be passed to the shell as data"
+    );
+    assert!(
+        workflow.contains("REPOSITORY: ${{ github.repository }}"),
+        "the repository name must be passed to the shell as data"
+    );
+}
+
+#[test]
+fn packaged_cli_requires_the_matching_core_version() {
+    let workspace = read("Cargo.toml");
+    let manifest = read("crates/gar-cli/Cargo.toml");
+    let version = workspace
+        .lines()
+        .find_map(|line| line.strip_prefix("version = \"")?.strip_suffix('"'))
+        .expect("workspace package version");
+    let dependency = format!("gar-core = {{ version = \"{version}\", path = \"../gar-core\" }}");
+
+    assert_eq!(
+        manifest.matches(&dependency).count(),
+        2,
+        "the registry package must not resolve an older gar-core that lacks APIs used by the CLI"
+    );
+}
+
+#[test]
 fn dependency_policy_uses_compatible_cargo_deny() {
     let workflow = read(".github/workflows/ci.yml");
     assert!(
