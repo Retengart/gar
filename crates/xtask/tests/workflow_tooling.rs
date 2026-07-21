@@ -74,7 +74,7 @@ fn release_context_values_are_not_interpolated_into_shell_source() {
 
 #[test]
 fn windows_release_explicitly_installs_the_cross_target() {
-    let workflow = read(".github/workflows/release.yml");
+    let workflow = read(".github/workflows/release.yml").replace("\r\n", "\n");
     let target_install = concat!(
         "- name: Ensure Rust target\n",
         "        shell: bash\n",
