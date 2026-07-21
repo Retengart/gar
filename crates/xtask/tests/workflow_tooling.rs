@@ -80,12 +80,12 @@ fn windows_release_explicitly_installs_the_cross_target() {
         "        shell: bash\n",
         "        env:\n",
         "          RUST_TARGET: ${{ matrix.target }}\n",
-        "        run: rustup target add --toolchain stable \"$RUST_TARGET\"",
+        "        run: rustup target add \"$RUST_TARGET\"",
     );
 
     assert!(
         workflow.contains(target_install),
-        "the Windows runner may lose a cross-target while updating its preinstalled stable toolchain; reinstall it explicitly and pass the matrix value as data"
+        "install the Windows cross-target for the toolchain selected by rust-toolchain.toml, and pass the matrix value as data"
     );
 }
 
