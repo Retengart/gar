@@ -88,6 +88,7 @@ pub fn u64_to_base60(mut n: u64) -> [u8; DIGITS] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     fn fmt(n: u64) -> String {
         let digits = u64_to_base60(n);
@@ -162,6 +163,15 @@ mod tests {
             for &d in &u64_to_base60(n) {
                 assert!(d < 60);
             }
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn arbitrary_u64_roundtrips_through_base60(value in any::<u64>()) {
+            let digits = u64_to_base60(value);
+            prop_assert!(digits.iter().all(|digit| *digit < 60));
+            prop_assert_eq!(recompose(&digits), u128::from(value));
         }
     }
 }

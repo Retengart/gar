@@ -86,6 +86,7 @@ const fn alphabet_index(c: u8) -> Option<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     #[test]
     fn alphabet_has_exactly_sixty_unique_characters() {
@@ -191,5 +192,14 @@ mod tests {
         let prefix = 0xDEAD_BEEF_CAFE_BABE_u64;
         let encoded = encode_u64(prefix);
         assert!(encoded.len() < 16, "{encoded} should be shorter than hex");
+    }
+
+    proptest! {
+        #[test]
+        fn arbitrary_u64_roundtrips_through_url_encoding(value in any::<u64>()) {
+            let encoded = encode_u64(value);
+            prop_assert_eq!(encoded.len(), DIGITS);
+            prop_assert_eq!(decode_u64(&encoded), Ok(value));
+        }
     }
 }
