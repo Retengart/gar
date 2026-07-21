@@ -5,7 +5,7 @@ a small core library and a narrow CLI surface.
 
 ## Prerequisites
 
-- Rust 1.95.0 is selected automatically by `rust-toolchain.toml`.
+- Rust 1.97.1 is selected automatically by `rust-toolchain.toml`.
 - [`cargo-nextest`](https://nexte.st/) runs the test suite.
 - [`cargo-deny`](https://embarkstudios.github.io/cargo-deny/) checks dependency policy.
 - [`just`](https://just.systems/) provides the command shortcuts below.

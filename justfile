@@ -18,6 +18,7 @@ doc:
 
 deny:
     cargo deny check
+    cargo deny --manifest-path fuzz/Cargo.toml check
 
 fuzz target="decode_stream":
     cargo +nightly fuzz run {{target}} --target "$(rustc +nightly --print host-tuple)" -- -max_total_time=60

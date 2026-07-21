@@ -12,9 +12,9 @@ publish.workspace = true
 readme.workspace = true
 
 [dev-dependencies]
-criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support", "html_reports"] }
-proptest = "1.11"
-serial_test = { version = "3", default-features = false }
+criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support", "html_reports"] }
+proptest = "1.11.0"
+serial_test = { version = "3.5.0", default-features = false }
 
 [[bench]]
 name    = "convert"
