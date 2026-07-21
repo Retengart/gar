@@ -21,6 +21,9 @@ use std::io::{self, BufReader, BufWriter, Read, Write};
 /// Width of the zero-padded hex offset column.
 const OFFSET_WIDTH: usize = 8;
 
+/// Zero-based text column where the ASCII byte cells begin in a dump row.
+pub(crate) const ASCII_COLUMN_START: u16 = 45;
+
 /// ASCII representation of a non-printable byte.
 const DOT: u8 = b'.';
 

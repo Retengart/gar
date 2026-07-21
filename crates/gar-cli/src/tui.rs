@@ -3,7 +3,7 @@
 use crate::analyze::{self, Analysis, DEFAULT_WINDOW, RegionKind};
 use crate::chunk::CHUNK;
 use crate::cli::{LensMode, TimeScale, build_lens};
-use crate::dump::{border_style, status_style, styled_line, title_style};
+use crate::dump::{ASCII_COLUMN_START, border_style, status_style, styled_line, title_style};
 use crate::persist::{self, PersistedState};
 use crate::search::{self, Pattern};
 use anyhow::Result;
@@ -13,7 +13,7 @@ use gar_core::lens::Lens;
 use ratatui::Terminal;
 use ratatui::backend::Backend;
 use ratatui::layout::{Constraint, Layout};
-use ratatui::style::Style;
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 use std::borrow::Cow;
@@ -164,6 +164,24 @@ where
 
 /// Scroll state + derived layout sizes shared between `draw` and
 /// `handle_key`.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+struct RowCacheKey {
+    scroll: usize,
+    visible_end: usize,
+    lens_mode: LensMode,
+    base_offset: u64,
+    width: u16,
+    height: u16,
+}
+
+#[derive(Default)]
+struct RowCache {
+    key: Option<RowCacheKey>,
+    paragraph: Paragraph<'static>,
+    #[cfg(test)]
+    rebuilds: usize,
+}
+
 struct ViewState {
     data_len: usize,
     total_lines: usize,
@@ -207,6 +225,8 @@ struct ViewState {
     /// Receiver for the background analysis thread. `None` once the
     /// result has been collected.
     analysis_rx: Option<std::sync::mpsc::Receiver<Analysis>>,
+    /// Bounded render cache containing only the current visible row window.
+    row_cache: RowCache,
 }
 
 impl ViewState {
@@ -237,6 +257,7 @@ impl ViewState {
                 });
                 Some(rx)
             },
+            row_cache: RowCache::default(),
         }
     }
 
@@ -269,38 +290,81 @@ impl ViewState {
         self.scroll_into_view();
 
         let visible_end = self.scroll.saturating_add(rows).min(self.total_lines);
-        let cursor_row = self.cursor.map(|b| b / CHUNK);
-        let cursor_col = self.cursor.map(|b| b % CHUNK);
-        let lens_ref: Option<&dyn Lens> = self.lens.as_deref();
-
-        let lines: Vec<Line<'_>> = (self.scroll..visible_end)
-            .map(|row| {
-                let start = row * CHUNK;
-                let end = (start + CHUNK).min(data.len());
-                let offset = base_offset.saturating_add(start as u64);
-                let cursor_here = if cursor_row == Some(row) {
-                    cursor_col
-                } else {
-                    None
-                };
-                styled_line(offset, &data[start..end], lens_ref, cursor_here)
-            })
-            .collect();
-
-        let title = Line::from(Span::styled(TITLE, title_style()));
-        let body = Paragraph::new(lines).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(border_style())
-                .title(title),
-        );
-        frame.render_widget(body, body_area);
+        let key = RowCacheKey {
+            scroll: self.scroll,
+            visible_end,
+            lens_mode: self.lens_mode,
+            base_offset,
+            width: body_area.width,
+            height: body_area.height,
+        };
+        if self.row_cache.key != Some(key) {
+            let lens_ref: Option<&dyn Lens> = self.lens.as_deref();
+            let lines: Vec<Line<'static>> = (self.scroll..visible_end)
+                .map(|row| {
+                    let start = row * CHUNK;
+                    let end = (start + CHUNK).min(data.len());
+                    let offset = base_offset.saturating_add(start as u64);
+                    styled_line(offset, &data[start..end], lens_ref, None)
+                })
+                .collect();
+            let title = Line::from(Span::styled(TITLE, title_style()));
+            self.row_cache.paragraph = Paragraph::new(lines).block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(border_style())
+                    .title(title),
+            );
+            self.row_cache.key = Some(key);
+            #[cfg(test)]
+            {
+                self.row_cache.rebuilds += 1;
+            }
+        }
+        frame.render_widget(&self.row_cache.paragraph, body_area);
+        self.render_cursor(frame, body_area, visible_end);
 
         let status_line = self.status_line(base_offset, visible_end);
         frame.render_widget(
             Paragraph::new(status_line).style(Style::default()),
             status_area,
         );
+    }
+
+    /// Apply cursor emphasis directly to the rendered cell so moving within
+    /// the cached viewport does not rebuild or clone any row spans.
+    fn render_cursor(
+        &self,
+        frame: &mut ratatui::Frame<'_>,
+        body_area: ratatui::layout::Rect,
+        visible_end: usize,
+    ) {
+        let Some(cursor) = self.cursor else {
+            return;
+        };
+        let row = cursor / CHUNK;
+        if row < self.scroll || row >= visible_end {
+            return;
+        }
+        let Ok(cursor_column) = u16::try_from(cursor % CHUNK) else {
+            return;
+        };
+        let Ok(visible_row) = u16::try_from(row - self.scroll) else {
+            return;
+        };
+
+        let x = body_area
+            .x
+            .saturating_add(1)
+            .saturating_add(ASCII_COLUMN_START)
+            .saturating_add(cursor_column);
+        let y = body_area.y.saturating_add(1).saturating_add(visible_row);
+        if x >= body_area.right().saturating_sub(1) || y >= body_area.bottom().saturating_sub(1) {
+            return;
+        }
+        if let Some(cell) = frame.buffer_mut().cell_mut((x, y)) {
+            cell.set_style(cell.style().add_modifier(Modifier::REVERSED));
+        }
     }
 
     /// If the cursor drifted off-screen (e.g. via `g`/`G` or page jumps),
@@ -744,10 +808,7 @@ const fn bookmark_idx(c: char) -> Option<usize> {
 /// Returns `'a'` for index 0, `'z'` for index 25.
 #[must_use]
 const fn slot_char(idx: usize) -> char {
-    const SLOTS: [u8; 26] = [
-        b'a', b'b', b'c', b'd', b'e', b'f', b'g', b'h', b'i', b'j', b'k', b'l', b'm', b'n', b'o',
-        b'p', b'q', b'r', b's', b't', b'u', b'v', b'w', b'x', b'y', b'z',
-    ];
+    const SLOTS: [u8; 26] = *b"abcdefghijklmnopqrstuvwxyz";
     SLOTS[idx] as char
 }
 
@@ -783,6 +844,7 @@ fn cuneiform_offset(offset: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ratatui::backend::TestBackend;
 
     fn state(data_len: usize) -> ViewState {
         // Analysis scans the slice we hand it; a buffer of zeros is a
@@ -790,6 +852,70 @@ mod tests {
         // care about actual byte contents.
         let data = vec![0_u8; data_len];
         ViewState::new(&data, LensMode::None, TimeScale::Gar, false)
+    }
+
+    fn render_test_frame(
+        state: &mut ViewState,
+        data: &[u8],
+        width: u16,
+        height: u16,
+    ) -> ratatui::buffer::Buffer {
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| state.draw(frame, data, 0)).unwrap();
+        terminal.backend().buffer().clone()
+    }
+
+    fn draw_test_frame(state: &mut ViewState, data: &[u8], width: u16, height: u16) {
+        let _ = render_test_frame(state, data, width, height);
+    }
+
+    #[test]
+    fn unchanged_frames_reuse_cached_rows() {
+        let data = vec![0_u8; 80];
+        let mut state = ViewState::new(&data, LensMode::None, TimeScale::Gar, false);
+        draw_test_frame(&mut state, &data, 80, 24);
+        draw_test_frame(&mut state, &data, 80, 24);
+        assert_eq!(state.row_cache.rebuilds, 1);
+    }
+
+    #[test]
+    fn scrolling_and_lens_changes_invalidate_cached_rows() {
+        let data = vec![0_u8; 8 * 100];
+        let mut state = ViewState::new(&data, LensMode::None, TimeScale::Gar, false);
+        draw_test_frame(&mut state, &data, 80, 12);
+        state.cursor = Some(8 * 50);
+        draw_test_frame(&mut state, &data, 80, 12);
+        state.cycle_lens();
+        draw_test_frame(&mut state, &data, 80, 12);
+        assert_eq!(state.row_cache.rebuilds, 3);
+    }
+
+    #[test]
+    fn cursor_overlay_moves_without_rebuilding_cached_rows() {
+        let data = b"ABCDEFGH";
+        let mut state = ViewState::new(data, LensMode::None, TimeScale::Gar, false);
+        state.cursor = Some(3);
+        let first = render_test_frame(&mut state, data, 80, 6);
+        assert!(
+            first[(ASCII_COLUMN_START + 1 + 3, 1)]
+                .modifier
+                .contains(Modifier::REVERSED)
+        );
+
+        state.cursor_fwd(1);
+        let second = render_test_frame(&mut state, data, 80, 6);
+        assert!(
+            !second[(ASCII_COLUMN_START + 1 + 3, 1)]
+                .modifier
+                .contains(Modifier::REVERSED)
+        );
+        assert!(
+            second[(ASCII_COLUMN_START + 1 + 4, 1)]
+                .modifier
+                .contains(Modifier::REVERSED)
+        );
+        assert_eq!(state.row_cache.rebuilds, 1);
     }
 
     #[test]
